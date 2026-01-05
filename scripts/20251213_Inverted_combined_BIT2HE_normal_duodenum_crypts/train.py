@@ -74,7 +74,7 @@ args_dict = {
                             'dataset': {
                 'name': 'cyclegan',
                 'domain': 'A',
-                'path': os.path.join(cmdargs.root_data_path, 'BIT', 'training_data_crypts'),
+                'path': os.path.join(cmdargs.root_data_path, '20251225_Training_data_crypts_BIT'),
             },
             'shape': (3, 512, 512),
             'transform_train': [
@@ -88,7 +88,7 @@ args_dict = {
             'dataset': {
                 'name': 'cyclegan',
                 'domain': 'B',
-                'path': os.path.join(cmdargs.root_data_path, 'FFPE-HE','OTS-25-25256 - 2025-08-01 13.59.31_duodenum','crypts','patches'),
+                'path': os.path.join(cmdargs.root_data_path, '20251225_Training_data_crypts_BIT'),
             },
             'shape': (3, 512, 512),
             'transform_train': [

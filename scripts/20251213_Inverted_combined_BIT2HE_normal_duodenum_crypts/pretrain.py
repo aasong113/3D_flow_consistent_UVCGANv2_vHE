@@ -7,7 +7,7 @@ from uvcgan2.utils.parsers import add_preset_name_parser, add_batch_size_parser
 
 def parse_cmdargs():
     parser = argparse.ArgumentParser(
-        description = '20251213_Inverted_Combined_BIT2HE_normal_duodenum_only_crypts_Pretrain'
+        description = '20251225_3D_Flow_Loss_BIT2HE_normal_duodenum_only_crypts_Pretrain'
     )
     parser.add_argument(
         '--root_data_path',
@@ -28,7 +28,7 @@ args_dict = {
                             'dataset': {
                 'name': 'cyclegan',
                 'domain': 'A',
-                'path': os.path.join(cmdargs.root_data_path, 'BIT', 'training_data_crypts'),
+                'path': os.path.join(cmdargs.root_data_path, '20251225_Training_data_crypts_BIT'),
             },
             'shape': (3, 512, 512),
             'transform_train': [
@@ -50,7 +50,7 @@ args_dict = {
             'dataset': {
                 'name': 'cyclegan',
                 'domain': 'B',
-                'path': os.path.join(cmdargs.root_data_path, 'FFPE-HE','OTS-25-25256 - 2025-08-01 13.59.31_duodenum','crypts','patches'),
+                'path': os.path.join(cmdargs.root_data_path, 'Training_data_crypts_FFPE_HE'),
                     
             },
             'shape': (3, 512, 512),
@@ -108,7 +108,7 @@ args_dict = {
     'steps_per_epoch'  : 32 * 1024 // cmdargs.batch_size,
 # args
     'label'      : f'pretrain-{cmdargs.gen}',
-    'outdir'     : os.path.join(ROOT_OUTDIR, "20251213_Inverted_Combined_BIT2HE_normal_duodenum_only_crypts_Pretrain"),
+    'outdir'     : os.path.join(ROOT_OUTDIR, "20251225_3D_Flow_Loss_BIT2HE_normal_duodenum_only_crypts_Pretrain"),
     'log_level'  : 'DEBUG',
     'checkpoint' : 5,
 }

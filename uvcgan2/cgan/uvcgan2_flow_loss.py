@@ -72,7 +72,7 @@ class UVCGAN2(ModelBase):
         # flow_input_a: The optical flow between input img_a_t and img_a_t+1
         # flow_input_b: The optical flow between fake img_b_t and img_b_t+1
         if self.is_train and self.lambda_flow > 0:
-            images += [ 'flow_input_a', 'flow_fake_b', ]
+            images += [ 'flow_real_a_t', 'flow_real_a_t1', 'flow_fake_b_t', 'flow_fake_b_t1' ]
 
         return NamedDict(*images)
 
@@ -127,6 +127,11 @@ class UVCGAN2(ModelBase):
 
         if self.is_train and self.lambda_idt > 0:
             losses += [ 'idt_a', 'idt_b' ]
+        
+        # Adding flow loss here. 
+        if self.is_train and self.lambda_flow > 0:
+            losses += [ 'flow_loss_real_a', 'flow_loss_fake_b' ]
+
 
         if self.is_train and config.gradient_penalty is not None:
             losses += [ 'gp_a', 'gp_b' ]
@@ -191,6 +196,7 @@ class UVCGAN2(ModelBase):
         self.criterion_gan     = GANLoss(config.loss).to(self.device)
         self.criterion_cycle   = torch.nn.L1Loss()
         self.criterion_idt     = torch.nn.L1Loss()
+        self.criterion_flow    = torch.nn.L1Loss() # Currently L1 loss for flow? Should this be the case? 
         self.criterion_consist = torch.nn.L1Loss()
 
         if self.is_train:

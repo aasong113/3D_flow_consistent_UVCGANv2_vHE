@@ -12,37 +12,46 @@ from .datasets.celeba                 import CelebaDataset
 from .datasets.image_domain_folder    import ImageDomainFolder
 from .datasets.image_domain_hierarchy import ImageDomainHierarchy
 from .datasets.zipper                 import DatasetZipper
+from .datasets.adjacent_z_pairs import AdjacentZPairDataset
 
 from .loader_zipper import DataLoaderZipper
 from .transforms    import select_transform
 
+
+
 def select_dataset(name, path, split, transform, **kwargs):
     if name == 'celeba':
         return CelebaDataset(
-            path, transform = transform, split = split, **kwargs
+            path, transform=transform, split=split, **kwargs
         )
 
     if name in [ 'cyclegan', 'image-domain-folder' ]:
         return ImageDomainFolder(
-            path, transform = transform, split = split, **kwargs
+            path, transform=transform, split=split, **kwargs
         )
 
     if name in [ 'image-domain-hierarchy' ]:
         return ImageDomainHierarchy(
-            path, transform = transform, split = split, **kwargs
+            path, transform=transform, split=split, **kwargs
         )
 
     if name == 'imagenet':
         return torchvision.datasets.ImageNet(
-            path, transform = transform, split = split, **kwargs
+            path, transform=transform, split=split, **kwargs
         )
 
     if name in [ 'imagedir', 'image-folder' ]:
         return torchvision.datasets.ImageFolder(
-            os.path.join(path, split), transform = transform, **kwargs
+            os.path.join(path, split), transform=transform, **kwargs
+        )
+
+    if name == 'adjacent-z-pair':
+        return AdjacentZPairDataset(
+            path, transform=transform, **kwargs
         )
 
     raise ValueError(f"Unknown dataset: {name}")
+
 
 def construct_single_dataset(dataset_config, split):
     name, kwargs = extract_name_kwargs(dataset_config.dataset)

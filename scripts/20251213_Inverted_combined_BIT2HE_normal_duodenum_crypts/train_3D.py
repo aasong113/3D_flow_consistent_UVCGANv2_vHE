@@ -84,7 +84,7 @@ dataset_config = [
         'dataset': {
             'name': 'adjacent-z-pairs',  # just a label; it will be overridden in train() pipeline
             'domain': 'A',
-            'path': os.path.join(cmdargs.root_data_path, '20251225_Training_data_crypts_BIT'),
+            'path': os.path.join(cmdargs.root_data_path, 'subset_20260106_3D_flow_training_data_BIT'),
             'z_spacing': cmdargs.z_spacing,  # pass to constructor
         },
         'shape': (3, 512, 512),
@@ -99,7 +99,7 @@ dataset_config = [
         'dataset': {
             'name': 'cyclegan',
             'domain': 'B',
-            'path': os.path.join(cmdargs.root_data_path, '20251225_Training_data_crypts_BIT'),
+            'path': os.path.join(cmdargs.root_data_path, 'subset_Training_data_crypts_FFPE_HE'),
         },
         'shape': (3, 512, 512),
         'transform_train': [

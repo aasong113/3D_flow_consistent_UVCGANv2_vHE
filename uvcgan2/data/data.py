@@ -12,7 +12,7 @@ from .datasets.celeba                 import CelebaDataset
 from .datasets.image_domain_folder    import ImageDomainFolder
 from .datasets.image_domain_hierarchy import ImageDomainHierarchy
 from .datasets.zipper                 import DatasetZipper
-from .datasets.adjacent_z_pairs import AdjacentZPairDataset
+from uvcgan2.data.adjacent_pair_dataset import AdjacentZPairDataset
 
 from .loader_zipper import DataLoaderZipper
 from .transforms    import select_transform

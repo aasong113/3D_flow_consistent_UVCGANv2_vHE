@@ -11,6 +11,11 @@ from .metrics   import LossMetrics
 from .callbacks import TrainingHistory
 from .transfer  import transfer
 
+from uvcgan2.data.adjacent_pair_dataset import AdjacentZPairDataset
+
+import os
+from torchvision.utils import save_image
+
 def training_epoch(it_train, model, title, steps_per_epoch):
     model.train()
 
@@ -81,4 +86,23 @@ def train(args_dict):
             model.save(epoch)
 
     model.save(epoch = None)
+
+# Save images of pairs to debug. 
+def save_debug_image_pairs(batch, save_dir='debug_pairs', max_pairs=4):
+    os.makedirs(save_dir, exist_ok=True)
+    
+    for i in range(min(max_pairs, len(batch['A']))):
+        a_img = batch['A'][i]
+        b_img = batch['B'][i]
+        a_name = batch['A_name'][i]
+        b_name = batch['B_name'][i]
+
+        # Remove file extension from names and replace '=' with '-' for compatibility
+        a_name_clean = os.path.splitext(a_name)[0].replace('=', '-')
+        b_name_clean = os.path.splitext(b_name)[0].replace('=', '-')
+
+        print(save_dir)
+
+        save_image(a_img, os.path.join(save_dir, f'{i}_A_{a_name_clean}.png'))
+        save_image(b_img, os.path.join(save_dir, f'{i}_B_{b_name_clean}.png'))
 

@@ -1,5 +1,13 @@
 import argparse
 import os
+import sys
+
+# Add the root project folder manually
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+  sys.path.insert(0, project_root)
+print("DEBUG: sys.path =", sys.path) # Optional debug
+
 
 from uvcgan2               import ROOT_OUTDIR, train
 from uvcgan2.presets       import GEN_PRESETS, BH_PRESETS
@@ -7,6 +15,7 @@ from uvcgan2.utils.parsers import add_preset_name_parser, add_batch_size_parser
 
 # ✅ ADD: Import custom adjacent pair dataset
 from uvcgan2.data.adjacent_pair_dataset import AdjacentZPairDataset
+
 
 def parse_cmdargs():
     parser = argparse.ArgumentParser(

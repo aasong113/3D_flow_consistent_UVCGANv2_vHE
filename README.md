@@ -1,9 +1,10 @@
 
 # 3D UVC FlowGAN: 3D Virtual H&E Staining with spatially consistent flow loss
 
+<p align="center">
 ### Original BIT 3D Tomographic Stack (LEFT) and 3D Virtually Stained H&E (RIGHT)
 ![BIT_epoch0200_downsample4x_crypts_Duodenum_IM0012_cropped_BIT_40X_frame29-55_crop2](https://github.com/user-attachments/assets/4ce83eaf-b8b2-43b0-8dec-cf12252ea2c8) ![vHE_epoch0200_downsample4x_crypts_Duodenum_IM0012_cropped_BIT_40X_frame29-55_crop2](https://github.com/user-attachments/assets/95739260-1845-47b8-ac83-529f14f7abb5)
-
+</p>
 
 Full Manuscript in Progress. 
 

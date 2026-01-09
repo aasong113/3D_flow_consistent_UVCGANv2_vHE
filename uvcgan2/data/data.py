@@ -45,7 +45,7 @@ def select_dataset(name, path, split, transform, **kwargs):
             os.path.join(path, split), transform=transform, **kwargs
         )
 
-    if name == 'adjacent-z-pair':
+    if name == 'adjacent-z-pairs':
         return AdjacentZPairDataset(
             path, transform=transform, **kwargs
         )
@@ -56,6 +56,7 @@ def select_dataset(name, path, split, transform, **kwargs):
 def construct_single_dataset(dataset_config, split):
     name, kwargs = extract_name_kwargs(dataset_config.dataset)
     path         = os.path.join(ROOT_DATA, kwargs.pop('path', name))
+ 
 
     if split == SPLIT_TRAIN:
         transform = select_transform(dataset_config.transform_train)
@@ -89,6 +90,9 @@ def construct_single_loader(
     )
 
 def construct_data_loaders(data_config, batch_size, split):
+
+    for ds_config in data_config.datasets:
+        print(f"DEBUG: Dataset config for domain {ds_config['dataset']['domain']}:", ds_config)
     datasets = construct_datasets(data_config, split)
     shuffle  = (split == SPLIT_TRAIN)
 

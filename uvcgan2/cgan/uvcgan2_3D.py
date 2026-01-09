@@ -22,16 +22,6 @@ from .model_base import ModelBase
 from .named_dict import NamedDict
 from .funcs import set_two_domain_input
 
-### Flow Loss Load RAFT or other Optical Flow methods
-import torch
-import torchvision.transforms as T
-from torchvision.models.optical_flow import raft_large, raft_small
-from torchvision.utils import flow_to_image
-import cv2
-
-
-
-
 def construct_consistency_model(consist, device):
     name, kwargs = extract_name_kwargs(consist)
 
@@ -53,7 +43,7 @@ def queued_forward(batch_head_model, input_image, queue, update_queue = True):
 
     return output
 
-class UVCGAN2(ModelBase):
+class UVCGAN2_3D(ModelBase):
     # pylint: disable=too-many-instance-attributes
 
     def _setup_images(self, _config):
@@ -63,16 +53,12 @@ class UVCGAN2(ModelBase):
             'reco_a', 'reco_b',
             'consist_real_a', 'consist_real_b',
             'consist_fake_a', 'consist_fake_b',
+            'real_a_z1', 'real_a_z2',
+            'fake_b_z1', 'fake_b_z2',
         ]
 
         if self.is_train and self.lambda_idt > 0:
             images += [ 'idt_a', 'idt_b', ]
-
-        # Adding Flow Loss
-        # flow_input_a: The optical flow between input img_a_t and img_a_t+1
-        # flow_input_b: The optical flow between fake img_b_t and img_b_t+1
-        if self.is_train and self.lambda_flow > 0:
-            images += [ 'flow_real_a_t', 'flow_real_a_t1', 'flow_fake_b_t', 'flow_fake_b_t1' ]
 
         return NamedDict(*images)
 
@@ -127,11 +113,6 @@ class UVCGAN2(ModelBase):
 
         if self.is_train and self.lambda_idt > 0:
             losses += [ 'idt_a', 'idt_b' ]
-        
-        # Adding flow loss here. 
-        if self.is_train and self.lambda_flow > 0:
-            losses += [ 'flow_loss_real_a', 'flow_loss_fake_b' ]
-
 
         if self.is_train and config.gradient_penalty is not None:
             losses += [ 'gp_a', 'gp_b' ]
@@ -167,7 +148,6 @@ class UVCGAN2(ModelBase):
         lambda_a        = 10.0,
         lambda_b        = 10.0,
         lambda_idt      = 0.5,
-        lambda_flow     = 0.5, # Added regularization term for the flow. 
         lambda_consist  = 0,
         head_queue_size = 3,
         avg_momentum    = None,
@@ -178,7 +158,6 @@ class UVCGAN2(ModelBase):
         self.lambda_a       = lambda_a
         self.lambda_b       = lambda_b
         self.lambda_idt     = lambda_idt
-        self.lambda_flow    = lambda_flow
         self.lambda_consist = lambda_consist
         self.avg_momentum   = avg_momentum
         self.head_config    = head_config or {}
@@ -196,7 +175,6 @@ class UVCGAN2(ModelBase):
         self.criterion_gan     = GANLoss(config.loss).to(self.device)
         self.criterion_cycle   = torch.nn.L1Loss()
         self.criterion_idt     = torch.nn.L1Loss()
-        self.criterion_flow    = torch.nn.L1Loss() # Currently L1 loss for flow? Should this be the case? 
         self.criterion_consist = torch.nn.L1Loss()
 
         if self.is_train:

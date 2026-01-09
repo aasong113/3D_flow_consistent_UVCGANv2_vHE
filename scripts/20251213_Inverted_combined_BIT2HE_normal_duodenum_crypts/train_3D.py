@@ -1,13 +1,12 @@
 import argparse
-import os
 import sys
-
-# Add the root project folder manually
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-if project_root not in sys.path:
-  sys.path.insert(0, project_root)
-print("DEBUG: sys.path =", sys.path) # Optional debug
-
+import os
+# Go up 3 levels to get repo root from inside scripts/2025*/train_3D.py
+new_repo_root = os.path.abspath(os.path.join(__file__, '..', '..', '..'))
+# Remove old UVCGAN paths and add the correct one
+sys.path = [p for p in sys.path if 'UVCGANv2_vHE' not in p or new_repo_root in os.path.abspath(p)]
+sys.path.insert(0, new_repo_root)
+print("Using uvcgan2 from:", new_repo_root)
 
 from uvcgan2               import ROOT_OUTDIR, train
 from uvcgan2.presets       import GEN_PRESETS, BH_PRESETS
@@ -15,6 +14,7 @@ from uvcgan2.utils.parsers import add_preset_name_parser, add_batch_size_parser
 
 # ✅ ADD: Import custom adjacent pair dataset
 from uvcgan2.data.adjacent_pair_dataset import AdjacentZPairDataset
+from torchvision.transforms.functional import to_pil_image
 
 
 def parse_cmdargs():
@@ -87,13 +87,19 @@ def get_transfer_preset(cmdargs):
 
 cmdargs   = parse_cmdargs()
 
+data_path_domainA = os.path.join(cmdargs.root_data_path, 'subset_20260106_3D_flow_training_data_BIT', 'trainA')
+data_path_domainB = os.path.join(cmdargs.root_data_path, 'subset_Training_data_crypts_FFPE_HE')
+
+model_save_dir = os.path.join(ROOT_OUTDIR, '20260106_Inverted_Combined_BIT2HE_normal_duodenum_only_crypts_Train_3DFlow')
+
+
 # ✅ BUILD dataset config — domain A will use the AdjacentZPairDataset manually injected below
 dataset_config = [
     {
         'dataset': {
             'name': 'adjacent-z-pairs',  # just a label; it will be overridden in train() pipeline
             'domain': 'A',
-            'path': os.path.join(cmdargs.root_data_path, 'subset_20260106_3D_flow_training_data_BIT'),
+            'path': data_path_domainA,
             'z_spacing': cmdargs.z_spacing,  # pass to constructor
         },
         'shape': (3, 512, 512),
@@ -108,7 +114,7 @@ dataset_config = [
         'dataset': {
             'name': 'cyclegan',
             'domain': 'B',
-            'path': os.path.join(cmdargs.root_data_path, 'subset_Training_data_crypts_FFPE_HE'),
+            'path': data_path_domainB,
         },
         'shape': (3, 512, 512),
         'transform_train': [
@@ -154,7 +160,7 @@ args_dict = {
             'init_gain' : 0.02,
         },
     },
-    'model' : 'uvcgan2',
+    'model' : 'uvcgan2_3D',
     'model_args' : {
         'lambda_a'        : cmdargs.lambda_cyc,
         'lambda_b'        : cmdargs.lambda_cyc,
@@ -189,6 +195,31 @@ args_dict = {
     'log_level'  : 'DEBUG',
     'checkpoint' : 10,
 }
+print(ROOT_OUTDIR)
+
+### Debug the dataloader. 
+# Inspect domain A dataset
+datasetA = AdjacentZPairDataset(root_dir=data_path_domainA, z_spacing=cmdargs.z_spacing)
+print("\n=== Sample Z-adjacent pairs from Domain A ===")
+for i in range(min(10, len(datasetA))):
+    item = datasetA[i]
+    print(f"[{i}] z1: {item['z1_name']}  |  z2: {item['z2_name']}  |  Z: ({item['meta']['z_t']} → {item['meta']['z_t_plus']})  |  Patch: {item['meta']['patch_id']}")
+
+# Save images from the first pair
+model_save_dir = cmdargs.model_save_dir if hasattr(cmdargs, 'model_save_dir') else './debug_output'
+os.makedirs(model_save_dir, exist_ok=True)
+
+item0 = datasetA[0]
+imgA = to_pil_image(item0['z1'])
+imgB = to_pil_image(item0['z2'])
+
+save_path_A = os.path.join(model_save_dir, f"debug_A_{item0['z1_name']}.png")
+save_path_B = os.path.join(model_save_dir, f"debug_B_{item0['z2_name']}.png")   
+imgA.save(save_path_A)
+imgB.save(save_path_B)
+
+print(f"Saved debug images to:\n{save_path_A}\n{save_path_B}")
+
 
 # ✅ Final call
 train(args_dict)

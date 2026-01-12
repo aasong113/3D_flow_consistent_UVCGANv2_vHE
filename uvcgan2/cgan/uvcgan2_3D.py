@@ -4,7 +4,10 @@
 
 import itertools
 import torch
+import os
+import matplotlib.pyplot as plt
 
+import torchvision.transforms.functional as TF
 from torchvision.transforms import GaussianBlur, Resize
 
 from uvcgan2.torch.select            import (
@@ -108,7 +111,7 @@ class UVCGAN2_3D(ModelBase):
 
     def _setup_losses(self, config):
         losses = [
-            'gen_ab', 'gen_ba', 'cycle_a', 'cycle_b', 'disc_a', 'disc_b'
+            'gen_ab', 'gen_ba', 'cycle_a', 'cycle_b', 'disc_a', 'disc_b',
         ]
 
         if self.is_train and self.lambda_idt > 0:
@@ -119,6 +122,10 @@ class UVCGAN2_3D(ModelBase):
 
         if self.consist_model is not None:
             losses += [ 'consist_a', 'consist_b' ]
+        
+        # This is the subtraction loss that we will start with. 
+        if self.is_train and self.lambda_sub_loss > 0: 
+            losses += [ 'subtraction_adj']
 
         return NamedDict(*losses)
 
@@ -149,6 +156,7 @@ class UVCGAN2_3D(ModelBase):
         lambda_b        = 10.0,
         lambda_idt      = 0.5,
         lambda_consist  = 0,
+        lambda_subtraction_loss = 0.5, # This is the weight for the subtraction loss between z1 and z2 in the adjacent slice mode.
         head_queue_size = 3,
         avg_momentum    = None,
         consistency     = None,
@@ -159,6 +167,7 @@ class UVCGAN2_3D(ModelBase):
         self.lambda_b       = lambda_b
         self.lambda_idt     = lambda_idt
         self.lambda_consist = lambda_consist
+        self.lambda_sub_loss = lambda_subtraction_loss
         self.avg_momentum   = avg_momentum
         self.head_config    = head_config or {}
         self.consist_model  = None
@@ -176,6 +185,7 @@ class UVCGAN2_3D(ModelBase):
         self.criterion_cycle   = torch.nn.L1Loss()
         self.criterion_idt     = torch.nn.L1Loss()
         self.criterion_consist = torch.nn.L1Loss()
+        self.criterion_subtract = torch.nn.L1Loss()  # Loss for the subtraction between adjacent slices in domain A.
 
         if self.is_train:
             self.queues = NamedDict(**{
@@ -190,6 +200,19 @@ class UVCGAN2_3D(ModelBase):
 
     def _set_input(self, inputs, domain):
         set_two_domain_input(self.images, inputs, domain, self.device)
+
+        # Debugging the shape and name
+        # print(
+        #     "DEBUG: real_a and real_a_adj loaded:",
+        #     f"real_a shape = {None if self.images.real_a is None else tuple(self.images.real_a.shape)},",
+        #     f"real_a_adj shape = {None if self.images.real_a_adj is None else tuple(self.images.real_a_adj.shape)}"
+        # )
+
+        # if hasattr(self.images, "real_a_names"):
+        #     print("  real_a_names:", self.images.real_a_names)
+
+        # if hasattr(self.images, "real_a_adj_names"):
+        #     print("  real_a_adj_names:", self.images.real_a_adj_names)
 
         if self.images.real_a is not None:
             if self.consist_model is not None:
@@ -214,6 +237,52 @@ class UVCGAN2_3D(ModelBase):
             consist_fake = self.consist_model(fake)
 
         return (fake, reco, consist_fake)
+
+
+    def subtraction_loss(self, real_a, real_a_adj, gen_fwd, gen_bkw):
+        """
+        Compute subtraction consistency loss between adjacent slices using only the first channel.
+        Also saves debug subtraction images for inspection.
+        """
+
+        # Use only the first channel (C=0) → shape: (B, H, W)
+        z1 = real_a[:, 0, :, :]
+        z2 = real_a_adj[:, 0, :, :]
+
+        subtract_real = torch.abs(z1 - z2)  # shape: (B, H, W)
+
+        # Generate fake images
+        fake_a = gen_fwd(real_a)
+        fake_a_adj = gen_fwd(real_a_adj)
+        recon_a = gen_bkw(fake_a)
+        recon_a_adj = gen_bkw(fake_a_adj)
+
+
+        # Use only first channel of generated images
+        fake_z1 = recon_a[:, 0, :, :]
+        fake_z2 = recon_a_adj[:, 0, :, :]
+
+        subtract_fake = torch.abs(fake_z1 - fake_z2)
+
+        # Save subtraction images for debugging (just first sample)
+        def save_image(tensor, filename):
+            tensor = tensor.detach().cpu().numpy()
+            plt.imsave(filename, tensor, cmap='gray')
+
+        # Debug images. In practice, you might want to save these less frequently or only a few samples.
+        save_dir = "/home/durrlab-asong/Anthony/3D_flow_consistent_UVCGANv2_vHE/debug_output"
+        os.makedirs(save_dir, exist_ok=True)
+        # Only save first sample in batch
+        save_image(z1[0],          os.path.join(save_dir, "z1_real.png"))
+        save_image(z2[0],          os.path.join(save_dir, "z2_real.png"))
+        save_image(fake_z1[0],     os.path.join(save_dir, "z1_fake.png"))
+        save_image(fake_z2[0],     os.path.join(save_dir, "z2_fake.png"))
+        save_image(subtract_real[0], os.path.join(save_dir, "subtraction_real.png"))
+        save_image(subtract_fake[0], os.path.join(save_dir, "subtraction_fake.png"))
+
+        # Compute L1 loss between subtraction maps
+        return self.criterion_consist(subtract_real, subtract_fake)
+
 
     def idt_forward_image(self, real, gen):
         # pylint: disable=no-self-use
@@ -281,6 +350,7 @@ class UVCGAN2_3D(ModelBase):
             else:
                 self.forward_dispatch(direction = 'ba')
 
+
     def eval_consist_loss(
         self, consist_real_0, consist_fake_1, lambda_cycle_0
     ):
@@ -331,6 +401,16 @@ class UVCGAN2_3D(ModelBase):
                 )
 
                 loss += self.losses.consist_a
+
+             # ✅ Subtraction loss (adjacent z slices)
+            if self.lambda_sub_loss > 0 and hasattr(self.images, "real_a_adj"):
+                self.losses.subtraction_adj = self.subtraction_loss(
+                    self.images.real_a,
+                    self.images.real_a_adj,
+                    self.models.gen_ab,
+                    self.models.gen_ba,
+                )
+                loss += self.lambda_sub_loss * self.losses.subtraction_adj
 
         elif direction == 'ba':
             (self.losses.gen_ba, self.losses.cycle_b, loss) \

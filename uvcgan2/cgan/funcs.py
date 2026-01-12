@@ -1,20 +1,23 @@
-
 import sys
+
 def set_two_domain_input(images, inputs, domain, device):
     if (domain is None) or (domain == 'both'):
 
         # Always define data_z from inputs[0]
         data_z = inputs[0]
 
-        # this is for adjacent slice mode.
+        # This is for adjacent slice mode.
         if not isinstance(data_z, dict):
             images.real_a = data_z.to(device, non_blocking=True)
 
         else:
             z1_batch = data_z['z1']
             z2_batch = data_z['z2']
-            images.real_a_z1 = z1_batch.to(device, non_blocking=True)
-            images.real_a_z2 = z2_batch.to(device, non_blocking=True)
+
+            images.real_a         = z1_batch.to(device, non_blocking=True)
+            images.real_a_adj     = z2_batch.to(device, non_blocking=True)
+            images.real_a_names   = data_z.get('z1_name', None)
+            images.real_a_adj_names = data_z.get('z2_name', None)
 
         images.real_b = inputs[1].to(device, non_blocking=True)
 

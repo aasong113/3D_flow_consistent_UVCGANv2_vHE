@@ -45,6 +45,7 @@ This method translates 3D Back-illumination Interference Tomography (BIT) image 
 - **Proceedings**: [NTM 2025 - NTh1C.3](https://opg.optica.org/abstract.cfm?URI=NTM-2025-NTh1C.3)  
 - PDF: `ntm-2025-nth1c.3.pdf` (see repository)
 - **Original architecture inspiration**: [UVCGANv2: Rethinking CycleGAN for Scientific Image Translation][uvcgan2_paper]
+- **Conference Submission in Preparation**
 
 ---
 

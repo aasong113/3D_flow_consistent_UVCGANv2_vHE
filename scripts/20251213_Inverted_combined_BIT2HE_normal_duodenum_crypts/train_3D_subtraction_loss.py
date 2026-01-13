@@ -173,7 +173,7 @@ args_dict = {
         'avg_momentum'    : 0.9999,
         'head_queue_size' : 3,
         'z_spacing' : cmdargs.z_spacing,  # Pass z_spacing to the main config for use in the model
-        'debug_root': os.path.join(model_save_dir, 'debug_images'),
+        'debug_root': os.path.join(model_save_dir, f'debug_images_zspacing={cmdargs.z_spacing}_lambdasub={lambda_str}'),  # Optional: directory to save debug images from subtraction loss
         'head_config'     : {
             'name'            : BH_PRESETS[cmdargs.head],
             'input_features'  : 512,

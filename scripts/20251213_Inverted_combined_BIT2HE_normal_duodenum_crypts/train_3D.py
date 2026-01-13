@@ -56,7 +56,7 @@ def parse_cmdargs():
     parser.add_argument(
         '--z-spacing',
         type=int,
-        default=1,
+        default=2,
         help='Z-spacing for AdjacentZPairDataset (domain A only)'
     )
 
@@ -167,6 +167,7 @@ args_dict = {
         'lambda_idt'      : 0.5,
         'avg_momentum'    : 0.9999,
         'head_queue_size' : 3,
+        'z_spacing' : cmdargs.z_spacing,  # Pass z_spacing to the main config for use in the model
         'head_config'     : {
             'name'            : BH_PRESETS[cmdargs.head],
             'input_features'  : 512,
@@ -191,7 +192,7 @@ args_dict = {
         f':{cmdargs.lambda_cyc}:{cmdargs.lambda_gp}:{cmdargs.lr_gen})'
     ),
 
-    'outdir'     : os.path.join(ROOT_OUTDIR, '20260106_Inverted_Combined_BIT2HE_normal_duodenum_only_crypts_Train_3DFlow'),
+    'outdir'     : os.path.join(ROOT_OUTDIR, f'20260106_Inverted_Combined_BIT2HE_normal_duodenum_only_crypts_Train_3DFlow_zspacing={cmdargs.z_spacing}micron'),
     'log_level'  : 'DEBUG',
     'checkpoint' : 10,
 }

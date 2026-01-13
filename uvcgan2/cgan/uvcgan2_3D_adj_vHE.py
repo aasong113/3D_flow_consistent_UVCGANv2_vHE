@@ -6,7 +6,6 @@ import itertools
 import torch
 import os
 import matplotlib.pyplot as plt
-import numpy as np
 
 import torchvision.transforms.functional as TF
 from torchvision.transforms import GaussianBlur, Resize
@@ -161,7 +160,6 @@ class UVCGAN2_3D(ModelBase):
         head_queue_size = 3,
         avg_momentum    = None,
         consistency     = None,
-        z_spacing      = 1.0, # default. 
     ):
         # pylint: disable=too-many-arguments
         # pylint: disable=too-many-locals
@@ -173,7 +171,6 @@ class UVCGAN2_3D(ModelBase):
         self.avg_momentum   = avg_momentum
         self.head_config    = head_config or {}
         self.consist_model  = None
-        self.z_spacing      = z_spacing
 
         if (lambda_consist > 0) and (consistency is not None):
             self.consist_model \
@@ -251,8 +248,8 @@ class UVCGAN2_3D(ModelBase):
         # Use only the first channel (C=0) → shape: (B, H, W)
         z1 = real_a[:, 0, :, :]
         z2 = real_a_adj[:, 0, :, :]
-        print("DEBUG: z-spacing = :", self.z_spacing)
-        subtract_real = torch.abs(z1 - z2) / self.z_spacing  # shape: (B, H, W)
+
+        subtract_real = torch.abs(z1 - z2)  # shape: (B, H, W)
 
         # Generate fake images
         fake_b = gen_fwd(real_a)
@@ -264,37 +261,17 @@ class UVCGAN2_3D(ModelBase):
         fake_z1 = recon_a[:, 0, :, :]
         fake_z2 = recon_a_adj[:, 0, :, :]
 
-        subtract_fake = torch.abs(fake_z1 - fake_z2) /self.z_spacing
-
-        print(fake_b.shape, z1.shape, z2.shape, fake_z1.shape, fake_z2.shape, subtract_real.shape, subtract_fake.shape)
+        subtract_fake = torch.abs(fake_z1 - fake_z2)
 
         # Save subtraction images for debugging (just first sample)
         def save_image(tensor, filename):
-            """
-            Save a PyTorch tensor as an image. Supports both grayscale and RGB.
-
-            Args:
-                tensor (torch.Tensor): Input image tensor. Shape (H, W) for grayscale or (3, H, W) for RGB.
-                filename (str): Output path to save the image.
-            """
-            tensor = tensor.detach().cpu()
-
-            # Convert to NumPy
-            if tensor.ndim == 2:
-                # Grayscale image (H, W)
-                image = tensor.numpy()
-                plt.imsave(filename, image, cmap='gray')
-            elif tensor.ndim == 3 and tensor.shape[0] == 3:
-                # RGB image (3, H, W) → (H, W, 3)
-                image = tensor.permute(1, 2, 0).numpy()
-                image = np.clip(image, 0, 1)  # Optional: Clamp values for display
-                plt.imsave(filename, image)
-            else:
-                raise ValueError(f"Unsupported tensor shape: {tensor.shape}. Expected (H, W) or (3, H, W).")
+            tensor = tensor.detach().cpu().numpy()
+            plt.imsave(filename, tensor, cmap='gray')
 
         # Debug images. In practice, you might want to save these less frequently or only a few samples.
         save_dir = "/home/durrlab-asong/Anthony/3D_flow_consistent_UVCGANv2_vHE/debug_output"
         os.makedirs(save_dir, exist_ok=True)
+        print(fake_b.shape, z1.shape, z2.shape, fake_z1.shape, fake_z2.shape, subtract_real.shape, subtract_fake.shape)
         # Only save first sample in batch
         save_image(fake_b[0],          os.path.join(save_dir, "fake_b_z.png"))
         save_image(z1[0],          os.path.join(save_dir, "z1_real.png"))

@@ -12,7 +12,8 @@ CGAN_MODELS = {
     'autoencoder'        : Autoencoder,
     'simple-autoencoder' : SimpleAutoencoder,
     'uvcgan2'            : UVCGAN2,
-    'uvcgan2_3D'         : UVCGAN2_3D,  # Use the same class for 3D, but with different config/model_args
+    'uvcgan2_3D'         : UVCGAN2_3D,  # Adjacent slice z-gradient loss ( slice_z - slice_z+1 ) consistency loss with original BIT and reconstructed BIT
+    'uvcgan2_3D_adj_vHE' : UVCGAN2_3D,  # Adjacent slice z-gradient loss ( slice_z - slice_z+1 ) consistency loss with original BIT and vHE
 }
 
 def select_model(name, **kwargs):

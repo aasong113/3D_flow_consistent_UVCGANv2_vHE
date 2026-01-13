@@ -287,7 +287,7 @@ class UVCGAN2_3D(ModelBase):
             Save a PyTorch tensor as an image. Supports both grayscale and RGB.
 
             Args:
-                tensor (torch.Tensor): Input image tensor. Shape (H, W) for grayscale or (3, H, W) for RGB.
+                tensor (torch.Tensor): Inpt image tensor. Shape (H, W) for grayscale or (3, H, W) for RGB.
                 filename (str): Output path to save the image.
             """
             tensor = tensor.detach().cpu()
@@ -446,6 +446,7 @@ class UVCGAN2_3D(ModelBase):
                     self.models.gen_ab,
                     self.models.gen_ba,
                 )
+
                 loss += self.lambda_sub_loss * self.losses.subtraction_adj
 
         elif direction == 'ba':

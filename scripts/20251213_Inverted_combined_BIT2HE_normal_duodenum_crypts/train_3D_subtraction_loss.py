@@ -19,7 +19,7 @@ from torchvision.transforms.functional import to_pil_image
 
 def parse_cmdargs():
     parser = argparse.ArgumentParser(
-        description = '20260106_Inverted_Combined_BIT2HE_normal_duodenum_only_crypts_Train_3DFlow'
+        description = '20260113_Inverted_Combined_BIT2HE_normal_duodenum_only_crypts_Train_3DFlow'
     )
 
     add_preset_name_parser(parser, 'gen',  GEN_PRESETS, 'uvcgan2')
@@ -60,6 +60,13 @@ def parse_cmdargs():
         help='Z-spacing for AdjacentZPairDataset (domain A only)'
     )
 
+    parser.add_argument(
+        '--lambda-sub-loss',
+        type=float,
+        default=0.5,
+        help='Weight for the subtraction loss between adjacent slices in domain A'
+    )
+
     add_batch_size_parser(parser, default = 1)
 
     return parser.parse_args()
@@ -69,7 +76,7 @@ def get_transfer_preset(cmdargs):
         return None
 
     base_model = (
-        '/home/durrlab-asong/Anthony/UVCGANv2_vHE/outdir/20251213_Inverted_Combined_BIT2HE_normal_duodenum_only_crypts_Pretrain/'
+        '/home/durrlab/Desktop/Anthony/UGVSM/UVCGANv2_vHE/outdir/20251225_Inverted_combined_BIT2HE_duodenum_crypts/20251225_Inverted_combined_BIT2HE_duodenum_crypts_pretrain/'
         'model_m(autoencoder)_d(None)'
         f"_g({GEN_PRESETS[cmdargs.gen]['model']})_pretrain-{cmdargs.gen}"
     )
@@ -87,11 +94,11 @@ def get_transfer_preset(cmdargs):
 
 cmdargs   = parse_cmdargs()
 
-data_path_domainA = os.path.join(cmdargs.root_data_path, 'subset_20260106_3D_flow_training_data_BIT', 'trainA')
-data_path_domainB = os.path.join(cmdargs.root_data_path, 'subset_Training_data_crypts_FFPE_HE')
+data_path_domainA = os.path.join(cmdargs.root_data_path, 'BIT', 'trainA')
+data_path_domainB = os.path.join(cmdargs.root_data_path, 'FFPE_HE')
 
-model_save_dir = os.path.join(ROOT_OUTDIR, '20260106_Inverted_Combined_BIT2HE_normal_duodenum_only_crypts_Train_3DFlow')
-
+model_save_dir = os.path.join(ROOT_OUTDIR, '20260113_Inverted_Combined_BIT2HE_normal_duodenum_only_crypts_Train_3DFlow')
+lambda_str = str(cmdargs.lambda_sub_loss).replace('.', 'p')
 
 # ✅ BUILD dataset config — domain A will use the AdjacentZPairDataset manually injected below
 dataset_config = [
@@ -166,6 +173,7 @@ args_dict = {
         'lambda_a'        : cmdargs.lambda_cyc,
         'lambda_b'        : cmdargs.lambda_cyc,
         'lambda_idt'      : 0.5,
+        'lambda_subtraction_loss' : cmdargs.lambda_sub_loss,  # You can adjust this weight as needed
         'avg_momentum'    : 0.9999,
         'head_queue_size' : 3,
         'z_spacing' : cmdargs.z_spacing,  # Pass z_spacing to the main config for use in the model
@@ -194,7 +202,7 @@ args_dict = {
         f':{cmdargs.lambda_cyc}:{cmdargs.lambda_gp}:{cmdargs.lr_gen})'
     ),
 
-    'outdir'     : os.path.join(model_save_dir, f'20260106_Inverted_Combined_BIT2HE_normal_duodenum_only_crypts_Train_3DFlow_zspacing={cmdargs.z_spacing}slices'),
+    'outdir'     : os.path.join(model_save_dir, f'20260106_Inverted_Combined_BIT2HE_normal_duodenum_only_crypts_Train_3DFlow_zspacing={cmdargs.z_spacing}slices_lambdaSub={lambda_str}'),
     'log_level'  : 'DEBUG',
     'checkpoint' : 10,
 }

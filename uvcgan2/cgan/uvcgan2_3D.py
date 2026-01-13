@@ -177,6 +177,17 @@ class UVCGAN2_3D(ModelBase):
         self.z_spacing      = z_spacing
         self.debug_root       = debug_root
 
+        # 🔥 Correct handling of debug_root
+        if debug_root is not None:
+            self.debug_root = debug_root
+        elif hasattr(config, "debug_root"):
+            self.debug_root = config.debug_root
+        else:
+            self.debug_root = None
+
+        if self.debug_root is not None:
+            os.makedirs(self.debug_root, exist_ok=True)
+
         if (lambda_consist > 0) and (consistency is not None):
             self.consist_model \
                 = construct_consistency_model(consistency, device)
@@ -253,7 +264,7 @@ class UVCGAN2_3D(ModelBase):
         # Use only the first channel (C=0) → shape: (B, H, W)
         z1 = real_a[:, 0, :, :]
         z2 = real_a_adj[:, 0, :, :]
-        print("DEBUG: z-spacing = :", self.z_spacing)
+        #print("DEBUG: z-spacing = :", self.z_spacing)
         subtract_real = torch.abs(z1 - z2) / self.z_spacing  # shape: (B, H, W)
 
         # Generate fake images
@@ -268,7 +279,7 @@ class UVCGAN2_3D(ModelBase):
 
         subtract_fake = torch.abs(fake_z1 - fake_z2) /self.z_spacing
 
-        print(fake_b.shape, z1.shape, z2.shape, fake_z1.shape, fake_z2.shape, subtract_real.shape, subtract_fake.shape)
+        #print(fake_b.shape, z1.shape, z2.shape, fake_z1.shape, fake_z2.shape, subtract_real.shape, subtract_fake.shape)
 
         # Save subtraction images for debugging (just first sample)
         def save_image(tensor, filename):
@@ -295,16 +306,15 @@ class UVCGAN2_3D(ModelBase):
                 raise ValueError(f"Unsupported tensor shape: {tensor.shape}. Expected (H, W) or (3, H, W).")
 
         # Debug images. In practice, you might want to save these less frequently or only a few samples.
-        save_dir = "/home/durrlab-asong/Anthony/3D_flow_consistent_UVCGANv2_vHE/debug_output"
-        os.makedirs(save_dir, exist_ok=True)
+        os.makedirs(self.debug_root, exist_ok=True)
         # Only save first sample in batch
-        save_image(fake_b[0],          os.path.join(save_dir, "fake_b_z.png"))
-        save_image(z1[0],          os.path.join(save_dir, "z1_real.png"))
-        save_image(z2[0],          os.path.join(save_dir, "z2_real.png"))
-        save_image(fake_z1[0],     os.path.join(save_dir, "z1_fake.png"))
-        save_image(fake_z2[0],     os.path.join(save_dir, "z2_fake.png"))
-        save_image(subtract_real[0], os.path.join(save_dir, "subtraction_real.png"))
-        save_image(subtract_fake[0], os.path.join(save_dir, "subtraction_fake.png"))
+        save_image(fake_b[0],          os.path.join(self.debug_root, "fake_b_z.png"))
+        save_image(z1[0],          os.path.join(self.debug_root, "z1_real.png"))
+        save_image(z2[0],          os.path.join(self.debug_root, "z2_real.png"))
+        save_image(fake_z1[0],     os.path.join(self.debug_root, "z1_fake.png"))
+        save_image(fake_z2[0],     os.path.join(self.debug_root, "z2_fake.png"))
+        save_image(subtract_real[0], os.path.join(self.debug_root, "subtraction_real.png"))
+        save_image(subtract_fake[0], os.path.join(self.debug_root, "subtraction_fake.png"))
 
         # Compute L1 loss between subtraction maps
         return self.criterion_consist(subtract_real, subtract_fake)

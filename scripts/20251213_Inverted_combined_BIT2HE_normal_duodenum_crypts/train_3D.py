@@ -169,6 +169,7 @@ args_dict = {
         'avg_momentum'    : 0.9999,
         'head_queue_size' : 3,
         'z_spacing' : cmdargs.z_spacing,  # Pass z_spacing to the main config for use in the model
+        'debug_root': os.path.join(model_save_dir, 'debug_images'),
         'head_config'     : {
             'name'            : BH_PRESETS[cmdargs.head],
             'input_features'  : 512,
@@ -193,7 +194,7 @@ args_dict = {
         f':{cmdargs.lambda_cyc}:{cmdargs.lambda_gp}:{cmdargs.lr_gen})'
     ),
 
-    'outdir'     : os.path.join(ROOT_OUTDIR, f'20260106_Inverted_Combined_BIT2HE_normal_duodenum_only_crypts_Train_3DFlow_zspacing={cmdargs.z_spacing}micron'),
+    'outdir'     : os.path.join(model_save_dir, f'20260106_Inverted_Combined_BIT2HE_normal_duodenum_only_crypts_Train_3DFlow_zspacing={cmdargs.z_spacing}slices'),
     'log_level'  : 'DEBUG',
     'checkpoint' : 10,
 }

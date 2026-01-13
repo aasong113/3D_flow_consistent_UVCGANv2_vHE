@@ -255,7 +255,7 @@ class UVCGAN2_3D(ModelBase):
         return (fake, reco, consist_fake)
 
 
-    def subtraction_loss(self, real_a, real_a_adj, gen_fwd, gen_bkw):
+    def subtraction_loss(self, real_a, real_a_adj, gen_fwd, gen_bkw, step=None):
         """
         Compute subtraction consistency loss between adjacent slices using only the first channel.
         Also saves debug subtraction images for inspection.
@@ -280,41 +280,41 @@ class UVCGAN2_3D(ModelBase):
         subtract_fake = torch.abs(fake_z1 - fake_z2) /self.z_spacing
 
         #print(fake_b.shape, z1.shape, z2.shape, fake_z1.shape, fake_z2.shape, subtract_real.shape, subtract_fake.shape)
+        if step % 100 == 0: 
+            # Save subtraction images for debugging (just first sample)
+            def save_image(tensor, filename):
+                """
+                Save a PyTorch tensor as an image. Supports both grayscale and RGB.
 
-        # Save subtraction images for debugging (just first sample)
-        def save_image(tensor, filename):
-            """
-            Save a PyTorch tensor as an image. Supports both grayscale and RGB.
+                Args:
+                    tensor (torch.Tensor): Inpt image tensor. Shape (H, W) for grayscale or (3, H, W) for RGB.
+                    filename (str): Output path to save the image.
+                """
+                tensor = tensor.detach().cpu()
 
-            Args:
-                tensor (torch.Tensor): Inpt image tensor. Shape (H, W) for grayscale or (3, H, W) for RGB.
-                filename (str): Output path to save the image.
-            """
-            tensor = tensor.detach().cpu()
+                # Convert to NumPy
+                if tensor.ndim == 2:
+                    # Grayscale image (H, W)
+                    image = tensor.numpy()
+                    plt.imsave(filename, image, cmap='gray')
+                elif tensor.ndim == 3 and tensor.shape[0] == 3:
+                    # RGB image (3, H, W) → (H, W, 3)
+                    image = tensor.permute(1, 2, 0).numpy()
+                    image = np.clip(image, 0, 1)  # Optional: Clamp values for display
+                    plt.imsave(filename, image)
+                else:
+                    raise ValueError(f"Unsupported tensor shape: {tensor.shape}. Expected (H, W) or (3, H, W).")
 
-            # Convert to NumPy
-            if tensor.ndim == 2:
-                # Grayscale image (H, W)
-                image = tensor.numpy()
-                plt.imsave(filename, image, cmap='gray')
-            elif tensor.ndim == 3 and tensor.shape[0] == 3:
-                # RGB image (3, H, W) → (H, W, 3)
-                image = tensor.permute(1, 2, 0).numpy()
-                image = np.clip(image, 0, 1)  # Optional: Clamp values for display
-                plt.imsave(filename, image)
-            else:
-                raise ValueError(f"Unsupported tensor shape: {tensor.shape}. Expected (H, W) or (3, H, W).")
-
-        # Debug images. In practice, you might want to save these less frequently or only a few samples.
-        os.makedirs(self.debug_root, exist_ok=True)
-        # Only save first sample in batch
-        save_image(fake_b[0],          os.path.join(self.debug_root, "fake_b_z.png"))
-        save_image(z1[0],          os.path.join(self.debug_root, "z1_real.png"))
-        save_image(z2[0],          os.path.join(self.debug_root, "z2_real.png"))
-        save_image(fake_z1[0],     os.path.join(self.debug_root, "z1_fake.png"))
-        save_image(fake_z2[0],     os.path.join(self.debug_root, "z2_fake.png"))
-        save_image(subtract_real[0], os.path.join(self.debug_root, "subtraction_real.png"))
-        save_image(subtract_fake[0], os.path.join(self.debug_root, "subtraction_fake.png"))
+            # Debug images. In practice, you might want to save these less frequently or only a few samples.
+            os.makedirs(self.debug_root, exist_ok=True)
+            # Only save first sample in batch
+            save_image(fake_b[0],          os.path.join(self.debug_root, "fake_b_z.png"))
+            save_image(z1[0],          os.path.join(self.debug_root, "z1_real.png"))
+            save_image(z2[0],          os.path.join(self.debug_root, "z2_real.png"))
+            save_image(fake_z1[0],     os.path.join(self.debug_root, "z1_fake.png"))
+            save_image(fake_z2[0],     os.path.join(self.debug_root, "z2_fake.png"))
+            save_image(subtract_real[0], os.path.join(self.debug_root, "subtraction_real.png"))
+            save_image(subtract_fake[0], os.path.join(self.debug_root, "subtraction_fake.png"))
 
         # Compute L1 loss between subtraction maps
         return self.criterion_consist(subtract_real, subtract_fake)
@@ -445,6 +445,7 @@ class UVCGAN2_3D(ModelBase):
                     self.images.real_a_adj,
                     self.models.gen_ab,
                     self.models.gen_ba,
+                    step=self.current_step
                 )
 
                 loss += self.lambda_sub_loss * self.losses.subtraction_adj

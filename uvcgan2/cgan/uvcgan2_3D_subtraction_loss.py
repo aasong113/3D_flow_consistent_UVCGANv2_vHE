@@ -59,6 +59,7 @@ class UVCGAN2_3D_subtraction_loss(ModelBase):
             'consist_fake_a', 'consist_fake_b',
             'real_a_z1', 'real_a_z2',
             'fake_b_z1', 'fake_b_z2',
+            'real_a_name', 'real_a_adj_name',
         ]
 
         if self.is_train and self.lambda_idt > 0:
@@ -309,9 +310,13 @@ class UVCGAN2_3D_subtraction_loss(ModelBase):
             # Debug images. In practice, you might want to save these less frequently or only a few samples.
             os.makedirs(self.debug_root, exist_ok=True)
             # Only save first sample in batch
+
+            z1_filename = self.images.real_a_names[0]  # string: "img=123_P=0.tif"
+            z2_filename = self.images.real_a_adj_names[0]
+            print(f"[Debug] z1 name: {z1_filename}, z2 name: {z2_filename}")
             save_image(fake_b[0],          os.path.join(self.debug_root, "fake_b_z.png"))
-            save_image(z1[0],          os.path.join(self.debug_root, "z1_real.png"))
-            save_image(z2[0],          os.path.join(self.debug_root, "z2_real.png"))
+            save_image(z1[0],          os.path.join(self.debug_root, f"z1_real_{z1_filename}.png"))
+            save_image(z2[0],          os.path.join(self.debug_root, f"z2_real_{z2_filename}.png"))
             save_image(fake_z1[0],     os.path.join(self.debug_root, "z1_fake.png"))
             save_image(fake_z2[0],     os.path.join(self.debug_root, "z2_fake.png"))
             save_image(subtract_real[0], os.path.join(self.debug_root, "subtraction_real.png"))

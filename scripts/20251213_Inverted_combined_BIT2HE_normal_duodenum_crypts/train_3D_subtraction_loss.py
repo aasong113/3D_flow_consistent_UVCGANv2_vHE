@@ -111,11 +111,7 @@ dataset_config = [
             'debug_root': os.path.join(cmdargs.root_data_path, 'debug_images')  # Optional: directory to save debug images from subtraction loss
         },
         'shape': (3, 512, 512),
-        'transform_train': [
-            { 'name': 'resize',      'size': 512 },
-            { 'name': 'random-crop', 'size': 512 },
-            'random-flip-horizontal',
-        ],
+        'transform_train': None,
         'transform_test': None,
     },
     {

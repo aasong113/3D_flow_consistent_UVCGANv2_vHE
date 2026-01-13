@@ -168,7 +168,7 @@ args_dict = {
             'init_gain' : 0.02,
         },
     },
-    'model' : 'uvcgan2_3D',
+    'model' : 'uvcgan2_3D_subtraction_loss',
     'model_args' : {
         'lambda_a'        : cmdargs.lambda_cyc,
         'lambda_b'        : cmdargs.lambda_cyc,

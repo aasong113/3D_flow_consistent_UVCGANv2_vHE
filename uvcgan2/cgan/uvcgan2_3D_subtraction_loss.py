@@ -47,7 +47,7 @@ def queued_forward(batch_head_model, input_image, queue, update_queue = True):
 
     return output
 
-class UVCGAN2_3D(ModelBase):
+class UVCGAN2_3D_subtraction_loss(ModelBase):
     # pylint: disable=too-many-instance-attributes
 
     def _setup_images(self, _config):
@@ -176,6 +176,7 @@ class UVCGAN2_3D(ModelBase):
         self.consist_model  = None
         self.z_spacing      = z_spacing
         self.debug_root       = debug_root
+        self.current_step =0
 
         # 🔥 Correct handling of debug_root
         if debug_root is not None:
@@ -570,4 +571,6 @@ class UVCGAN2_3D(ModelBase):
 
         if self.avg_momentum is not None:
             self._accumulate_averages()
+        
+        self.current_step += 1
 

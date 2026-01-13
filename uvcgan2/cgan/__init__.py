@@ -3,7 +3,7 @@ from .pix2pix            import Pix2PixModel
 from .autoencoder        import Autoencoder
 from .simple_autoencoder import SimpleAutoencoder
 from .uvcgan2            import UVCGAN2
-from .uvcgan2_3D         import UVCGAN2_3D  
+from .uvcgan2_3D_subtraction_loss         import UVCGAN2_3D_subtraction_loss  
 
 
 CGAN_MODELS = {
@@ -12,8 +12,8 @@ CGAN_MODELS = {
     'autoencoder'        : Autoencoder,
     'simple-autoencoder' : SimpleAutoencoder,
     'uvcgan2'            : UVCGAN2,
-    'uvcgan2_3D'         : UVCGAN2_3D,  # Adjacent slice z-gradient loss ( slice_z - slice_z+1 ) consistency loss with original BIT and reconstructed BIT
-    'uvcgan2_3D_adj_vHE' : UVCGAN2_3D,  # Adjacent slice z-gradient loss ( slice_z - slice_z+1 ) consistency loss with original BIT and vHE
+    'uvcgan2_3D_subtraction_loss'         : UVCGAN2_3D_subtraction_loss,
+
 }
 
 def select_model(name, **kwargs):

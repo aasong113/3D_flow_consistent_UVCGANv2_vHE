@@ -7,7 +7,7 @@ This method translates 3D Back-illumination Interference Tomography (BIT) image 
 
 ### 🔬 Original BIT (Left) → Virtual H&E (Right)
 
-**Fresh human duodenum from Whipple surgery**, imaged with our multimodal BIT microscope. Specific structures are crypts. 
+**Fresh human duodenum from Whipple surgery**, imaged with our multimodal BIT microscope. Specific structures are crypts. Downsampled 4X, 1 micron z-spacing
 
 <p float="left">
   <img src="https://github.com/user-attachments/assets/4ce83eaf-b8b2-43b0-8dec-cf12252ea2c8" width="45%"/>
@@ -22,6 +22,7 @@ This method translates 3D Back-illumination Interference Tomography (BIT) image 
 ### 🔄 3D Virtual Volume Rotation
 ![Movie_4x_downsampled-ezgif com-optimize](https://github.com/user-attachments/assets/c0ae4fca-9928-4ec3-973a-e079033d1b65)
 
+~302×211×30 µm³,1 micron z-spacing, Downsampled 4X
 ---
 
 ### 🧠 3D Volume Renderings
@@ -33,10 +34,10 @@ This method translates 3D Back-illumination Interference Tomography (BIT) image 
 
 ---
 
-### 🧾 BIT, BIT-to-virtual H&E, Ground Truth FFPE H&E Patches for Human Duodenum Tissue
-
+### 🧾 BIT (top row), BIT-to-virtual H&E (middle row), Ground Truth FFPE H&E Patches for Human Duodenum Tissue (bottom row)
+<p float="center">
 <img width="512" height="311" alt="Figure_BIT_BIT2vHE_FFPE-HE" src="https://github.com/user-attachments/assets/6398e492-af05-476c-a766-cdb68c1b47f1" />
-
+</p>
 ---
 
 ### 📜 References

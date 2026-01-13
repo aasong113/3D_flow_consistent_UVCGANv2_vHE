@@ -101,6 +101,7 @@ dataset_config = [
             'domain': 'A',
             'path': data_path_domainA,
             'z_spacing': cmdargs.z_spacing,  # pass to constructor
+            'debug_root': os.path.join(cmdargs.root_data_path, 'debug_images')  # Optional: directory to save debug images from subtraction loss
         },
         'shape': (3, 512, 512),
         'transform_train': [

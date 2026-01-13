@@ -162,6 +162,7 @@ class UVCGAN2_3D(ModelBase):
         avg_momentum    = None,
         consistency     = None,
         z_spacing      = 1.0, # default. 
+        debug_root =  None, # Optional root directory for saving debug images from the subtraction loss.
     ):
         # pylint: disable=too-many-arguments
         # pylint: disable=too-many-locals
@@ -174,6 +175,7 @@ class UVCGAN2_3D(ModelBase):
         self.head_config    = head_config or {}
         self.consist_model  = None
         self.z_spacing      = z_spacing
+        self.debug_root       = debug_root
 
         if (lambda_consist > 0) and (consistency is not None):
             self.consist_model \

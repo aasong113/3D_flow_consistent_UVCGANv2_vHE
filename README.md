@@ -14,15 +14,16 @@ This method translates 3D Back-illumination Interference Tomography (BIT) image 
   <img src="https://github.com/user-attachments/assets/95739260-1845-47b8-ac83-529f14f7abb5" width="45%"/>
 </p>
 
-**BIT Input Volume**: ~302×211×30 µm³  
-**Virtual H&E Output**: ~302×211×30 µm³
+**BIT Input Volume**: ~302×211×15 µm³  
+**Virtual H&E Output**: ~302×211×15 µm³
 
 ---
 
-### 🔄 3D Virtual Volume Rotation
-![Movie_4x_downsampled-ezgif com-optimize](https://github.com/user-attachments/assets/c0ae4fca-9928-4ec3-973a-e079033d1b65)
+### 🔄 3D Virtual Volume Slices
+![slice_rendering](https://github.com/user-attachments/assets/a6f0a985-bc56-4ae9-b814-065953683e3c)
 
-~302×211×30 µm³,1 micron z-spacing, Downsampled 4X
+
+~302×211×15 µm³,0.5 micron z-spacing, Downsampled 4X
 ---
 
 ### 🧠 3D Volume Renderings

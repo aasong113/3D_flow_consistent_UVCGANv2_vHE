@@ -1,13 +1,13 @@
-# 3D UVC FlowGAN: Virtual H&E Staining with Spatially Consistent Flow Loss
+# 3D UVC FlowGAN: Unsupervised Virtual H&E Staining with Spatially Consistent Flow Loss
 
-**3D Virtual H&E staining using z-axis flow and gradient loss for spatial consistency.**  
+**Unsupervised 3D Virtual H&E staining using z-axis flow and gradient loss for spatial consistency.**  
 This method translates 3D Back-illumination Interference Tomography (BIT) image volumes to virtually stained H&E without the need for 3D histology—only 2D target FFPE H&E slices are required.
 
 ---
 
 ### 🔬 Original BIT (Left) → Virtual H&E (Right)
 
-**Fresh human duodenum from Whipple surgery**, imaged with our multimodal BIT microscope.
+**Fresh human duodenum from Whipple surgery**, imaged with our multimodal BIT microscope. Specific structures are crypts. 
 
 <p float="left">
   <img src="https://github.com/user-attachments/assets/4ce83eaf-b8b2-43b0-8dec-cf12252ea2c8" width="45%"/>
@@ -33,12 +33,9 @@ This method translates 3D Back-illumination Interference Tomography (BIT) image 
 
 ---
 
-### 🧾 Ground Truth FFPE H&E Patches
+### 🧾 BIT, BIT-to-virtual H&E, Ground Truth FFPE H&E Patches for Human Duodenum Tissue
 
-[duodenum_crypts_roi_18](https://github.com/user-attachments/files/24579530/duodenum_crypts_OTS-25-25256_2025-08-01_13-43-05_roi_18_00018.tif)  
-[duodenum_crypts_roi_11](https://github.com/user-attachments/files/24579535/duodenum_crypts_OTS-25-25256_2025-08-01_13-43-05_roi_11_00024.tif)  
-[duodenum_crypts_roi_5](https://github.com/user-attachments/files/24579537/duodenum_crypts_OTS-25-25256_2025-08-01_13-43-05_roi_5_00027.tif)  
-[duodenum_crypts_roi_13](https://github.com/user-attachments/files/24579540/duodenum_crypts_OTS-25-25256_2025-08-01_13-43-05_roi_13_00067.tif)
+<img width="512" height="311" alt="Figure_BIT_BIT2vHE_FFPE-HE" src="https://github.com/user-attachments/assets/6398e492-af05-476c-a766-cdb68c1b47f1" />
 
 ---
 

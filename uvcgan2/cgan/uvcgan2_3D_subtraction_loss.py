@@ -324,7 +324,7 @@ class UVCGAN2_3D_subtraction_loss(ModelBase):
             save_image(subtract_fake[0], os.path.join(self.debug_root, "subtraction_fake.png"))
 
         # Compute L1 loss between subtraction maps
-        return self.criterion_consist(subtract_real, subtract_fake)
+        return self.criterion_subtract(subtract_real, subtract_fake)
 
 
     def idt_forward_image(self, real, gen):

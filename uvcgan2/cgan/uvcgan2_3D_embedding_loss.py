@@ -11,6 +11,7 @@ import numpy as np
 
 import torchvision.transforms.functional as TF
 from torchvision.transforms import GaussianBlur, Resize
+import torch.nn.functional as F
 
 from uvcgan2.torch.select            import (
     select_optimizer, extract_name_kwargs
@@ -25,7 +26,7 @@ from uvcgan2.models.generator        import construct_generator
 
 from .model_base import ModelBase
 from .named_dict import NamedDict
-from .funcs import set_two_domain_input
+from .funcs import set_two_domain_input, save_image, save_embedding_as_image
 
 def construct_consistency_model(consist, device):
     name, kwargs = extract_name_kwargs(consist)
@@ -111,15 +112,24 @@ class UVCGAN2_3D_embedding_loss(ModelBase):
             )
 
         ## Register ViT Forward Hooks here for embedding loss: 
-        self.vit_embeddings = {}  # Store embeddings here
+        embedding_storage = {}
+
         def make_hook(name):
-            def hook(module, inp, output):
-                self.vit_embeddings[name] = output.detach()
+            def hook(module, input, output):
+                embedding_storage[name] = output.detach()
             return hook
         
         # Register hook to bottleneck (ExtendedPixelwiseViT) for both generators
-        models['gen_ab'].net.bottleneck.register_forward_hook(make_hook("ab"))
-        models['gen_ba'].net.bottleneck.register_forward_hook(make_hook("ba"))
+        print("Modules inside gen_ab.net:")
+        for name, module in models['gen_ab'].net.named_modules():
+            print(name)
+
+        # Get the bottleneck layers AB
+        bottleneck_layer_ab = models['gen_ab'].net.modnet.inner_module.inner_module.inner_module.inner_module.encoder.encoder[11].norm2
+        bottleneck_layer_ab.register_forward_hook(make_hook("ab"))
+        
+        bottleneck_layer_ba = models['gen_ba'].net.modnet.inner_module.inner_module.inner_module.inner_module.encoder.encoder[11].norm2
+        bottleneck_layer_ba.register_forward_hook(make_hook("ba"))
 
         return NamedDict(**models)
 
@@ -222,7 +232,7 @@ class UVCGAN2_3D_embedding_loss(ModelBase):
         self.criterion_idt     = torch.nn.L1Loss()
         self.criterion_consist = torch.nn.L1Loss()
         self.criterion_subtract = torch.nn.L1Loss()  # Loss for the subtraction between adjacent slices in domain A.
-        self.criterion_embedding = torch.nn.MSELoss()  # Loss for the embedding consistency between adjacent slices in domain A.
+        self.criterion_embedding = torch.nn.L1Loss()  # Loss for the embedding consistency between adjacent slices in domain A.
 
         if self.is_train:
             self.queues = NamedDict(**{
@@ -277,56 +287,63 @@ class UVCGAN2_3D_embedding_loss(ModelBase):
 
     def embedding_loss(self, real_a, real_a_adj, gen_fwd, gen_bkw, step=None):
         """
-        Compute subtraction consistency loss between adjacent slices using only the first channel.
-        Also saves debug subtraction images for inspection.
+        Compute motion consistency loss between real and generated slice pairs
+        using ViT bottleneck embeddings.
         """
-        # ========== 2. Register forward hooks for embeddings ==========
-        z1_embed, z2_embed = [], []
-        fake1_embed, fake2_embed = [], []
 
-        def hook_z1(m, i, o): z1_embed.append(o.detach())
-        def hook_z2(m, i, o): z2_embed.append(o.detach())
-        def hook_fake1(m, i, o): fake1_embed.append(o.detach())
-        def hook_fake2(m, i, o): fake2_embed.append(o.detach())
+        # --------- 1. Setup embedding storage dict ---------
+        if not hasattr(self, "embedding_storage"):
+            self.embedding_storage = {}
 
-        # Hook: ViT bottleneck module from ModNet inside gen_fwd/gen_bkw
-        handle_z1 = gen_fwd.net.bottleneck.register_forward_hook(hook_z1)
+        def make_hook(name):
+            def hook(module, input, output):
+                self.embedding_storage[name] = output.detach()
+            return hook
+
+        # --------- 2. Register forward hooks (only once) ---------
+        if not hasattr(self, "hook_handles"):
+            self.hook_handles = {}
+
+            bottleneck_z = gen_fwd.net.modnet.inner_module.inner_module.inner_module.inner_module.encoder.encoder[11].norm2
+            bottleneck_fake = gen_bkw.net.modnet.inner_module.inner_module.inner_module.inner_module.encoder.encoder[11].norm2
+
+            self.hook_handles["z"] = bottleneck_z.register_forward_hook(make_hook("z"))
+            self.hook_handles["fake"] = bottleneck_fake.register_forward_hook(make_hook("fake"))
+
+        # --------- 3. Forward passes to trigger hooks ---------
         _ = gen_fwd(real_a)
-        handle_z1.remove()
+        z1_vit = self.embedding_storage["z"].clone()
 
-        handle_z2 = gen_fwd.net.bottleneck.register_forward_hook(hook_z2)
         _ = gen_fwd(real_a_adj)
-        handle_z2.remove()
+        z2_vit = self.embedding_storage["z"].clone()
 
         fake_b = gen_fwd(real_a)
         fake_b_adj = gen_fwd(real_a_adj)
 
-        handle_fake1 = gen_bkw.net.bottleneck.register_forward_hook(hook_fake1)
         _ = gen_bkw(fake_b)
-        handle_fake1.remove()
+        fake1_vit = self.embedding_storage["fake"].clone()
 
-        handle_fake2 = gen_bkw.net.bottleneck.register_forward_hook(hook_fake2)
         _ = gen_bkw(fake_b_adj)
-        handle_fake2.remove()
+        fake2_vit = self.embedding_storage["fake"].clone()
 
-        # ========== 3. Use ViT embeddings if needed ==========
-        # Embeddings have shape (B, C, H', W')
-        z1_vit = z1_embed[0] if z1_embed else None
-        z2_vit = z2_embed[0] if z2_embed else None
-        fake1_vit = fake1_embed[0] if fake1_embed else None
-        fake2_vit = fake2_embed[0] if fake2_embed else None
+        # --------- 4. Compute cosine-based motion maps ---------
+        def cosine_motion(a, b):
+            # Remove CLS token (assumes [0] is CLS)
+            a, b = a[1:], b[1:]  # shape: (N, B, D)
+            a = a.squeeze(1)     # (N, D)
+            b = b.squeeze(1)
 
-        # ========== 3. Use ViT embeddings if needed ==========
-        z1_vit    = z1_embed[0]   if z1_embed   else None
-        z2_vit    = z2_embed[0]   if z2_embed   else None
-        fake1_vit = fake1_embed[0] if fake1_embed else None
-        fake2_vit = fake2_embed[0] if fake2_embed else None
+            cos_sim = F.cosine_similarity(a, b, dim=-1)  # (N,)
+            motion = 1 - cos_sim                         # higher = more motion
+            return motion
 
-        # ---- Debug shapes (print only occasionally) ----
-        if step is not None and step % 50 == 0:
-            def shp(x):
-                return None if x is None else tuple(x.shape)
+        motion_real = cosine_motion(z1_vit, z2_vit)
+        motion_fake = cosine_motion(fake1_vit, fake2_vit)
+        print(f"DEBUG: motion_real shape = {motion_real.shape}, motion_fake shape = {motion_fake.shape}")
 
+        # --------- 5. Debug output ---------
+        if step is not None and step % 100 == 0:
+            def shp(x): return None if x is None else tuple(x.shape)
             print(
                 f"[ViT bottleneck @ step {step}] "
                 f"z1={shp(z1_vit)}, "
@@ -334,6 +351,19 @@ class UVCGAN2_3D_embedding_loss(ModelBase):
                 f"fake1={shp(fake1_vit)}, "
                 f"fake2={shp(fake2_vit)}"
             )
+
+            save_image(real_a[0],          os.path.join(self.debug_root, "real_a_z.png"))
+            save_image(real_a_adj[0],          os.path.join(self.debug_root, "real_a_adj_z.png"))
+            save_image(fake_b[0],          os.path.join(self.debug_root, "fake_b_z.png"))
+            save_image(fake_b_adj[0],          os.path.join(self.debug_root, "fake_b_adj_z.png"))
+            save_embedding_as_image(z1_vit, self.debug_root, prefix="embedding_real")
+            save_embedding_as_image(fake1_vit, self.debug_root, prefix="embedding_fake")
+            save_embedding_as_image(motion_real, self.debug_root, prefix="motion_embedding_real")
+            save_embedding_as_image(motion_fake, self.debug_root, prefix="motion_embedding_fake")
+
+
+        # --------- 6. Motion consistency loss ---------
+        return self.criterion_embedding(motion_real, motion_fake)
 
 
     # Visualize the ViT Bottle Neck Embeddings for debugging. 
@@ -394,29 +424,6 @@ class UVCGAN2_3D_embedding_loss(ModelBase):
         #print(fake_b.shape, z1.shape, z2.shape, fake_z1.shape, fake_z2.shape, subtract_real.shape, subtract_fake.shape)
         if step % 100 == 0: 
             # Save subtraction images for debugging (just first sample)
-            def save_image(tensor, filename):
-                """
-                Save a PyTorch tensor as an image. Supports both grayscale and RGB.
-
-                Args:
-                    tensor (torch.Tensor): Inpt image tensor. Shape (H, W) for grayscale or (3, H, W) for RGB.
-                    filename (str): Output path to save the image.
-                """
-                tensor = tensor.detach().cpu()
-
-                # Convert to NumPy
-                if tensor.ndim == 2:
-                    # Grayscale image (H, W)
-                    image = tensor.numpy()
-                    plt.imsave(filename, image, cmap='gray')
-                elif tensor.ndim == 3 and tensor.shape[0] == 3:
-                    # RGB image (3, H, W) → (H, W, 3)
-                    image = tensor.permute(1, 2, 0).numpy()
-                    image = np.clip(image, 0, 1)  # Optional: Clamp values for display
-                    plt.imsave(filename, image)
-                else:
-                    raise ValueError(f"Unsupported tensor shape: {tensor.shape}. Expected (H, W) or (3, H, W).")
-
             # Debug images. In practice, you might want to save these less frequently or only a few samples.
             os.makedirs(self.debug_root, exist_ok=True)
             # Only save first sample in batch
@@ -433,7 +440,7 @@ class UVCGAN2_3D_embedding_loss(ModelBase):
             save_image(subtract_fake[0], os.path.join(self.debug_root, "subtraction_fake.png"))
 
         # Compute L1 loss between subtraction maps
-        return self.criterion_consist(subtract_real, subtract_fake)
+        return self.criterion_subtract(subtract_real, subtract_fake)
 
 
     def idt_forward_image(self, real, gen):

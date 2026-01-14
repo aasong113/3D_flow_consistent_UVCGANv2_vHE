@@ -83,7 +83,7 @@ def get_transfer_preset(cmdargs):
         return None
 
     base_model = (
-        '/home/durrlab/Desktop/Anthony/UGVSM/UVCGANv2_vHE/outdir/20251225_Inverted_combined_BIT2HE_duodenum_crypts/20251225_Inverted_combined_BIT2HE_duodenum_crypts_pretrain/'
+        '/home/durrlab-asong/Anthony/UVCGANv2_vHE/outdir/20251213_Inverted_Combined_BIT2HE_normal_duodenum_only_crypts_Pretrain/'
         'model_m(autoencoder)_d(None)'
         f"_g({GEN_PRESETS[cmdargs.gen]['model']})_pretrain-{cmdargs.gen}"
     )
@@ -101,7 +101,7 @@ def get_transfer_preset(cmdargs):
 
 cmdargs   = parse_cmdargs()
 
-data_path_domainA = os.path.join(cmdargs.root_data_path, 'BIT', 'trainA')
+data_path_domainA = os.path.join(cmdargs.root_data_path, 'BIT')
 data_path_domainB = os.path.join(cmdargs.root_data_path, 'FFPE_HE')
 
 model_save_dir = os.path.join(ROOT_OUTDIR, '20260113_Inverted_Combined_BIT2HE_normal_duodenum_only_crypts_Train_3DFlow')
@@ -114,7 +114,7 @@ dataset_config = [
         'dataset': {
             'name': 'adjacent-z-pairs',  # just a label; it will be overridden in train() pipeline
             'domain': 'A',
-            'path': data_path_domainA,
+            'path': os.path.join(data_path_domainA, 'trainA'),
             'z_spacing': cmdargs.z_spacing,  # pass to constructor
             'debug_root': os.path.join(cmdargs.root_data_path, 'debug_images')  # Optional: directory to save debug images from subtraction loss
         },

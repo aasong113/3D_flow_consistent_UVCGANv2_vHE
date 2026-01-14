@@ -315,6 +315,7 @@ class UVCGAN2_3D_subtraction_loss(ModelBase):
             z2_filename = self.images.real_a_adj_names[0]
             print(f"[Debug] z1 name: {z1_filename}, z2 name: {z2_filename}")
             save_image(fake_b[0],          os.path.join(self.debug_root, "fake_b_z.png"))
+            save_image(fake_b_adj[0],      os.path.join(self.debug_root, "fake_b_adj_z.png"))
             save_image(z1[0],          os.path.join(self.debug_root, "z1_real.png"))
             save_image(z2[0],          os.path.join(self.debug_root, "z2_real.png"))
             save_image(fake_z1[0],     os.path.join(self.debug_root, "z1_fake.png"))

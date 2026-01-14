@@ -8,6 +8,7 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 
+
 import torchvision.transforms.functional as TF
 from torchvision.transforms import GaussianBlur, Resize
 
@@ -47,7 +48,7 @@ def queued_forward(batch_head_model, input_image, queue, update_queue = True):
 
     return output
 
-class UVCGAN2_3D_subtraction_loss(ModelBase):
+class UVCGAN2_3D_embedding_loss(ModelBase):
     # pylint: disable=too-many-instance-attributes
 
     def _setup_images(self, _config):
@@ -109,6 +110,17 @@ class UVCGAN2_3D_subtraction_loss(ModelBase):
                 config.discriminator, config.data.datasets[1].shape
             )
 
+        ## Register ViT Forward Hooks here for embedding loss: 
+        self.vit_embeddings = {}  # Store embeddings here
+        def make_hook(name):
+            def hook(module, inp, output):
+                self.vit_embeddings[name] = output.detach()
+            return hook
+        
+        # Register hook to bottleneck (ExtendedPixelwiseViT) for both generators
+        models['gen_ab'].net.bottleneck.register_forward_hook(make_hook("ab"))
+        models['gen_ba'].net.bottleneck.register_forward_hook(make_hook("ba"))
+
         return NamedDict(**models)
 
     def _setup_losses(self, config):
@@ -128,6 +140,10 @@ class UVCGAN2_3D_subtraction_loss(ModelBase):
         # This is the subtraction loss that we will start with. 
         if self.is_train and self.lambda_sub_loss > 0: 
             losses += [ 'subtraction_adj']
+        
+        # This is the embedding loss. 
+        if self.is_train and self.lambda_embedding_loss > 0: 
+            losses += [ 'embedding_adj']  
 
         return NamedDict(*losses)
 
@@ -159,6 +175,7 @@ class UVCGAN2_3D_subtraction_loss(ModelBase):
         lambda_idt      = 0.5,
         lambda_consist  = 0,
         lambda_subtraction_loss = 0.5, # This is the weight for the subtraction loss between z1 and z2 in the adjacent slice mode.
+        lambda_embedding_loss = 0.5, # This is the weight for the embedding loss between adjacent slices.
         head_queue_size = 3,
         avg_momentum    = None,
         consistency     = None,
@@ -171,7 +188,8 @@ class UVCGAN2_3D_subtraction_loss(ModelBase):
         self.lambda_b       = lambda_b
         self.lambda_idt     = lambda_idt
         self.lambda_consist = lambda_consist
-        self.lambda_sub_loss = lambda_subtraction_loss
+        self.lambda_sub_loss = lambda_subtraction_loss # subtraction Loss
+        self.lambda_embedding_loss = lambda_embedding_loss # embedding Losss
         self.avg_momentum   = avg_momentum
         self.head_config    = head_config or {}
         self.consist_model  = None
@@ -204,6 +222,7 @@ class UVCGAN2_3D_subtraction_loss(ModelBase):
         self.criterion_idt     = torch.nn.L1Loss()
         self.criterion_consist = torch.nn.L1Loss()
         self.criterion_subtract = torch.nn.L1Loss()  # Loss for the subtraction between adjacent slices in domain A.
+        self.criterion_embedding = torch.nn.MSELoss()  # Loss for the embedding consistency between adjacent slices in domain A.
 
         if self.is_train:
             self.queues = NamedDict(**{
@@ -255,6 +274,97 @@ class UVCGAN2_3D_subtraction_loss(ModelBase):
             consist_fake = self.consist_model(fake)
 
         return (fake, reco, consist_fake)
+
+    def embedding_loss(self, real_a, real_a_adj, gen_fwd, gen_bkw, step=None):
+        """
+        Compute subtraction consistency loss between adjacent slices using only the first channel.
+        Also saves debug subtraction images for inspection.
+        """
+        # ========== 2. Register forward hooks for embeddings ==========
+        z1_embed, z2_embed = [], []
+        fake1_embed, fake2_embed = [], []
+
+        def hook_z1(m, i, o): z1_embed.append(o.detach())
+        def hook_z2(m, i, o): z2_embed.append(o.detach())
+        def hook_fake1(m, i, o): fake1_embed.append(o.detach())
+        def hook_fake2(m, i, o): fake2_embed.append(o.detach())
+
+        # Hook: ViT bottleneck module from ModNet inside gen_fwd/gen_bkw
+        handle_z1 = gen_fwd.net.bottleneck.register_forward_hook(hook_z1)
+        _ = gen_fwd(real_a)
+        handle_z1.remove()
+
+        handle_z2 = gen_fwd.net.bottleneck.register_forward_hook(hook_z2)
+        _ = gen_fwd(real_a_adj)
+        handle_z2.remove()
+
+        fake_b = gen_fwd(real_a)
+        fake_b_adj = gen_fwd(real_a_adj)
+
+        handle_fake1 = gen_bkw.net.bottleneck.register_forward_hook(hook_fake1)
+        _ = gen_bkw(fake_b)
+        handle_fake1.remove()
+
+        handle_fake2 = gen_bkw.net.bottleneck.register_forward_hook(hook_fake2)
+        _ = gen_bkw(fake_b_adj)
+        handle_fake2.remove()
+
+        # ========== 3. Use ViT embeddings if needed ==========
+        # Embeddings have shape (B, C, H', W')
+        z1_vit = z1_embed[0] if z1_embed else None
+        z2_vit = z2_embed[0] if z2_embed else None
+        fake1_vit = fake1_embed[0] if fake1_embed else None
+        fake2_vit = fake2_embed[0] if fake2_embed else None
+
+        # ========== 3. Use ViT embeddings if needed ==========
+        z1_vit    = z1_embed[0]   if z1_embed   else None
+        z2_vit    = z2_embed[0]   if z2_embed   else None
+        fake1_vit = fake1_embed[0] if fake1_embed else None
+        fake2_vit = fake2_embed[0] if fake2_embed else None
+
+        # ---- Debug shapes (print only occasionally) ----
+        if step is not None and step % 50 == 0:
+            def shp(x):
+                return None if x is None else tuple(x.shape)
+
+            print(
+                f"[ViT bottleneck @ step {step}] "
+                f"z1={shp(z1_vit)}, "
+                f"z2={shp(z2_vit)}, "
+                f"fake1={shp(fake1_vit)}, "
+                f"fake2={shp(fake2_vit)}"
+            )
+
+
+    # Visualize the ViT Bottle Neck Embeddings for debugging. 
+    def save_embedding_as_image(tensor, save_path, prefix="embed", max_channels=3):
+        """
+        Saves selected channels or a channel-aggregated 2D projection of the embedding tensor.
+
+        Args:
+            tensor: (B, C, H, W) torch tensor
+            save_path: folder to save the image(s)
+            prefix: filename prefix
+            max_channels: number of individual channels to save
+        """
+        os.makedirs(save_path, exist_ok=True)
+
+        tensor = tensor.detach().cpu()
+
+        B, C, H, W = tensor.shape
+
+        for b in range(B):
+            # Option 1: save channel-mean projection
+            mean_proj = tensor[b].mean(dim=0)
+            plt.imsave(os.path.join(save_path, f"{prefix}_b{b}_mean.png"),
+                    mean_proj.numpy(), cmap='viridis')
+
+            # Option 2: save first few channels
+            for c in range(min(max_channels, C)):
+                channel_img = tensor[b, c]
+                plt.imsave(os.path.join(save_path, f"{prefix}_b{b}_c{c}.png"),
+                        channel_img.numpy(), cmap='gray')
+
 
 
     def subtraction_loss(self, real_a, real_a_adj, gen_fwd, gen_bkw, step=None):
@@ -455,6 +565,18 @@ class UVCGAN2_3D_subtraction_loss(ModelBase):
                 )
 
                 loss += self.lambda_sub_loss * self.losses.subtraction_adj
+            
+            # Embedding Loss (adjacent z slices)
+            if self.lambda_embedding_loss > 0 and hasattr(self.images, "real_a_adj"):
+                self.losses.embedding_adj = self.embedding_loss(
+                    self.images.real_a,
+                    self.images.real_a_adj,
+                    self.models.gen_ab,
+                    self.models.gen_ba,
+                    step=self.current_step
+                )
+
+                loss += self.lambda_embedding_loss * self.losses.embedding_adj
 
         elif direction == 'ba':
             (self.losses.gen_ba, self.losses.cycle_b, loss) \

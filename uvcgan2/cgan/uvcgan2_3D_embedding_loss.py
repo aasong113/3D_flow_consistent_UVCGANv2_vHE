@@ -207,6 +207,8 @@ class UVCGAN2_3D_embedding_loss(ModelBase):
         self.debug_root       = debug_root
         self.current_step =0
 
+        print(f"Initialized UVCGAN2_3D_embedding_loss with lambda_a={lambda_a}, lambda_b={lambda_b}, lambda_idt={lambda_idt}, lambda_consist={lambda_consist}, lambda_subtraction_loss={lambda_subtraction_loss}, lambda_embedding_loss={lambda_embedding_loss}, avg_momentum={avg_momentum}, z_spacing={z_spacing}")
+
         # 🔥 Correct handling of debug_root
         if debug_root is not None:
             self.debug_root = debug_root
@@ -339,7 +341,7 @@ class UVCGAN2_3D_embedding_loss(ModelBase):
 
         motion_real = cosine_motion(z1_vit, z2_vit)
         motion_fake = cosine_motion(fake1_vit, fake2_vit)
-        print(f"DEBUG: motion_real shape = {motion_real.shape}, motion_fake shape = {motion_fake.shape}")
+        #print(f"DEBUG: motion_real shape = {motion_real.shape}, motion_fake shape = {motion_fake.shape}")
 
         # --------- 5. Debug output ---------
         if step is not None and step % 100 == 0:

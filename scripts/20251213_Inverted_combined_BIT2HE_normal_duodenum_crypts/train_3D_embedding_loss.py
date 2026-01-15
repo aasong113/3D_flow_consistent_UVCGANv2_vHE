@@ -63,14 +63,14 @@ def parse_cmdargs():
     parser.add_argument(
         '--lambda-sub-loss',
         type=float,
-        default=0,
+        default=0.0,
         help='Weight for the subtraction loss between adjacent slices in domain A'
     )
 
     parser.add_argument(
         '--lambda-embedding-loss',
         type=float,
-        default=0.5,
+        default=1.0,
         help='Weight for the embedding loss between adjacent slices in domain A'
     )
 
@@ -100,8 +100,8 @@ def get_transfer_preset(cmdargs):
     }
 
 cmdargs   = parse_cmdargs()
-
-data_path_domainA = os.path.join(cmdargs.root_data_path, 'BIT')
+# /home/durrlab-asong/Anthony/subset_training_data_crypts
+data_path_domainA = os.path.join(cmdargs.root_data_path, 'BIT', 'trainA')
 data_path_domainB = os.path.join(cmdargs.root_data_path, 'FFPE_HE')
 
 model_save_dir = os.path.join(ROOT_OUTDIR, '20260113_Inverted_Combined_BIT2HE_normal_duodenum_only_crypts_Train_3DFlow')
@@ -114,7 +114,7 @@ dataset_config = [
         'dataset': {
             'name': 'adjacent-z-pairs',  # just a label; it will be overridden in train() pipeline
             'domain': 'A',
-            'path': os.path.join(data_path_domainA, 'trainA'),
+            'path': data_path_domainA,
             'z_spacing': cmdargs.z_spacing,  # pass to constructor
             'debug_root': os.path.join(cmdargs.root_data_path, 'debug_images')  # Optional: directory to save debug images from subtraction loss
         },
@@ -178,6 +178,7 @@ args_dict = {
         'lambda_b'        : cmdargs.lambda_cyc,
         'lambda_idt'      : 0.5,
         'lambda_subtraction_loss' : cmdargs.lambda_sub_loss,  # You can adjust this weight as needed
+        'lambda_embedding_loss' : cmdargs.lambda_embedding_loss,  # You can adjust this weight as needed
         'avg_momentum'    : 0.9999,
         'head_queue_size' : 3,
         'z_spacing' : cmdargs.z_spacing,  # Pass z_spacing to the main config for use in the model

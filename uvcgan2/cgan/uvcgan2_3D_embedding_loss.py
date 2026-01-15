@@ -330,8 +330,7 @@ class UVCGAN2_3D_embedding_loss(ModelBase):
 
         # --------- 4. Compute cosine-based motion maps ---------
         def cosine_motion(a, b):
-            # Remove CLS token (assumes [0] is CLS)
-            a, b = a[1:], b[1:]  # shape: (N, B, D)
+            a, b = a[:-1], b[:-1]  # remove style token (last) # shape: (N, B, D), style token is the last token. Look at transformer.py to understand. it is concatenated as [patch_tokens, style_token]. We want to remove the style token for motion consistency.
             a = a.squeeze(1)     # (N, D)
             b = b.squeeze(1)
 
@@ -451,6 +450,24 @@ class UVCGAN2_3D_embedding_loss(ModelBase):
         # (N, C, H, W)
         idt = gen(real)
         return idt
+    
+    # Function to save the forward images for debugging.
+    def save_forward_image(self, real_a, real_a_adj, gen_ab, step=None):
+        # pylint: disable=no-self-use
+
+        # (N, C, H, W)
+        fake_b = gen_ab(real_a)
+        fake_b_adj = gen_ab(real_a_adj)
+        if step % 100 == 0: 
+            # Save subtraction images for debugging (just first sample)
+            # Debug images. In practice, you might want to save these less frequently or only a few samples.
+            os.makedirs(self.debug_root, exist_ok=True)
+            save_image(real_a[0],          os.path.join(self.debug_root, "real_a.png"))
+            save_image(real_a_adj[0],      os.path.join(self.debug_root, "real_a_adj.png"))
+            save_image(fake_b[0],          os.path.join(self.debug_root, "fake_b.png"))
+            save_image(fake_b_adj[0],      os.path.join(self.debug_root, "fake_b_adj.png"))
+
+        return None
 
     def forward_dispatch(self, direction):
         if direction == 'ab':
@@ -586,6 +603,11 @@ class UVCGAN2_3D_embedding_loss(ModelBase):
                 )
 
                 loss += self.lambda_embedding_loss * self.losses.embedding_adj
+            
+            # if running original UVCGAN2 without adjacent slice losses.  
+            if self.lambda_embedding_loss == 0 and self.lambda_sub_loss == 0 and hasattr(self.images, "real_a_adj"):
+                self.save_forward_image(self.images.real_a, self.images.real_a_adj, self.models.gen_ab, step=self.current_step)
+
 
         elif direction == 'ba':
             (self.losses.gen_ba, self.losses.cycle_b, loss) \

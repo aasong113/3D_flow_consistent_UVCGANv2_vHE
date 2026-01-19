@@ -5,6 +5,7 @@ from .simple_autoencoder import SimpleAutoencoder
 from .uvcgan2            import UVCGAN2
 from .uvcgan2_3D_subtraction_loss         import UVCGAN2_3D_subtraction_loss  
 from .uvcgan2_3D_embedding_loss         import UVCGAN2_3D_embedding_loss
+from .uvcgan2_3D_emb_sub_stylefusion import UVCGAN2_3D_stylefusion
 
 
 CGAN_MODELS = {
@@ -15,6 +16,7 @@ CGAN_MODELS = {
     'uvcgan2'            : UVCGAN2,
     'uvcgan2_3D_subtraction_loss'         : UVCGAN2_3D_subtraction_loss,
     'uvcgan2_3D_embedding_loss'         : UVCGAN2_3D_embedding_loss,
+    'uvcgan2_3D_stylefusion'         : UVCGAN2_3D_stylefusion,
 
 }
 

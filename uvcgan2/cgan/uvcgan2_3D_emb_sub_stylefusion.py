@@ -3,6 +3,7 @@
 # E1102: self.criterion_gan is not callable (not-callable)
 
 import itertools
+import math
 import torch
 import os
 import matplotlib.pyplot as plt
@@ -171,8 +172,12 @@ class UVCGAN2_3D_stylefusion(ModelBase):
             if mod_tokens.shape[0] != self.style_delta.shape[0]:
                 return output
 
+            lam = self._get_style_fusion_lambda()
+            if lam == 0.0:
+                return output
+
             mod_tokens = mod_tokens.clone()
-            mod_tokens[:, -1, :] = mod_tokens[:, -1, :] + self.style_delta
+            mod_tokens[:, -1, :] = mod_tokens[:, -1, :] + (lam * self.style_delta)
             return (result, mod_tokens.view(mod.shape[0], -1))
 
         self.style_fusion_handles["ba_capture"] = (
@@ -238,6 +243,7 @@ class UVCGAN2_3D_stylefusion(ModelBase):
         lambda_consist  = 0,
         lambda_subtraction_loss = 0.5, # This is the weight for the subtraction loss between z1 and z2 in the adjacent slice mode.
         lambda_embedding_loss = 0.5, # This is the weight for the embedding loss between adjacent slices.
+        lambda_style_fusion = 1.0, # Scale factor for style token injection; decays with epochs (cosine schedule).
         head_queue_size = 3,
         avg_momentum    = None,
         consistency     = None,
@@ -252,14 +258,16 @@ class UVCGAN2_3D_stylefusion(ModelBase):
         self.lambda_consist = lambda_consist
         self.lambda_sub_loss = lambda_subtraction_loss # subtraction Loss
         self.lambda_embedding_loss = lambda_embedding_loss # embedding Losss
+        self.lambda_style_fusion_base = lambda_style_fusion
         self.avg_momentum   = avg_momentum
         self.head_config    = head_config or {}
         self.consist_model  = None
         self.z_spacing      = z_spacing
         self.debug_root       = debug_root
         self.current_step =0
+        self.total_epochs = getattr(config, "epochs", None)
 
-        print(f"Initialized UVCGAN2_3D_embedding_loss with lambda_a={lambda_a}, lambda_b={lambda_b}, lambda_idt={lambda_idt}, lambda_consist={lambda_consist}, lambda_subtraction_loss={lambda_subtraction_loss}, lambda_embedding_loss={lambda_embedding_loss}, avg_momentum={avg_momentum}, z_spacing={z_spacing}")
+        print(f"Initialized UVCGAN2_3D_embedding_loss with lambda_a={lambda_a}, lambda_b={lambda_b}, lambda_idt={lambda_idt}, lambda_consist={lambda_consist}, lambda_subtraction_loss={lambda_subtraction_loss}, lambda_embedding_loss={lambda_embedding_loss}, lambda_style_fusion={lambda_style_fusion}, avg_momentum={avg_momentum}, z_spacing={z_spacing}")
 
         # 🔥 Correct handling of debug_root
         if debug_root is not None:
@@ -298,6 +306,19 @@ class UVCGAN2_3D_stylefusion(ModelBase):
 
             if config.gradient_penalty is not None:
                 self.gp = GradientPenalty(**config.gradient_penalty)
+
+    def _get_style_fusion_lambda(self):
+        # Cosine decay from lambda_style_fusion_base at epoch 1 to ~0 at epoch total_epochs.
+        if self.lambda_style_fusion_base <= 0:
+            return 0.0
+        if not self.total_epochs or self.total_epochs <= 1:
+            return float(self.lambda_style_fusion_base)
+
+        effective_epoch = int(self.epoch) + 1  # model.epoch is the last completed epoch during training
+        t = max(0, min(effective_epoch - 1, self.total_epochs - 1))
+        T = self.total_epochs - 1
+        scale = 0.5 * (1.0 + math.cos(math.pi * (t / T)))
+        return float(self.lambda_style_fusion_base) * float(scale)
 
     def _set_input(self, inputs, domain):
         set_two_domain_input(self.images, inputs, domain, self.device)

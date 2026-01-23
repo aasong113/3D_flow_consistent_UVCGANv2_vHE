@@ -75,6 +75,13 @@ def parse_cmdargs():
     )
 
     parser.add_argument(
+        '--lambda-style-fusion',
+        type=float,
+        default=1.0,
+        help='Initial scale for style-token injection (cosine decays over training epochs)'
+    )
+
+    parser.add_argument(
         '--use-embedding-loss',
         dest='use_embedding_loss',
         action='store_true',
@@ -114,6 +121,8 @@ def get_transfer_preset(cmdargs):
     }
 
 cmdargs   = parse_cmdargs()
+if not cmdargs.use_embedding_loss:
+    cmdargs.lambda_style_fusion = 0.0
 # /home/durrlab-asong/Anthony/subset_training_data_crypts
 data_path_domainA = os.path.join(cmdargs.root_data_path, 'BIT', 'trainA')
 data_path_domainB = os.path.join(cmdargs.root_data_path, 'FFPE_HE')
@@ -186,13 +195,14 @@ args_dict = {
             'init_gain' : 0.02,
         },
     },
-    'model' : 'uvcgan2_3D_embedding_loss',
+    'model' : 'uvcgan2_3D_stylefusion',
     'model_args' : {
         'lambda_a'        : cmdargs.lambda_cyc,
         'lambda_b'        : cmdargs.lambda_cyc,
         'lambda_idt'      : 0.5,
         'lambda_subtraction_loss' : cmdargs.lambda_sub_loss,  # You can adjust this weight as needed
         'lambda_embedding_loss' : cmdargs.lambda_embedding_loss,  # You can adjust this weight as needed
+        'lambda_style_fusion' : cmdargs.lambda_style_fusion,
         'avg_momentum'    : 0.9999,
         'head_queue_size' : 3,
         'z_spacing' : cmdargs.z_spacing,  # Pass z_spacing to the main config for use in the model

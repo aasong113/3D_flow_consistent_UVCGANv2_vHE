@@ -137,7 +137,20 @@ class UVCGAN2_3D_stylefusion(ModelBase):
         return NamedDict(**models)
 
     def _get_vit_bottleneck(self, gen):
-        return gen.net.modnet.get_bottleneck()
+        # `gen.net` is typically a `ModNet` instance; its `.modnet` attribute is
+        # the outermost `ModNetBlock` (which does not expose get_bottleneck()).
+        # The `ModNet` wrapper provides get_bottleneck() to access the innermost
+        # bottleneck module (ExtendedPixelwiseViT).
+        if hasattr(gen.net, "get_bottleneck"):
+            return gen.net.get_bottleneck()
+
+        # Fallback for unexpected generator wrappers.
+        if hasattr(gen, "get_bottleneck"):
+            return gen.get_bottleneck()
+
+        raise AttributeError(
+            "Could not locate ViT bottleneck; expected `gen.net.get_bottleneck()`."
+        )
 
     def _setup_style_fusion(self, models):
         self.style_token_ba = None

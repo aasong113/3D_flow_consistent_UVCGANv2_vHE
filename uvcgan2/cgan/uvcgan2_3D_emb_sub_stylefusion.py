@@ -131,7 +131,59 @@ class UVCGAN2_3D_stylefusion(ModelBase):
         bottleneck_layer_ba = models['gen_ba'].net.modnet.inner_module.inner_module.inner_module.inner_module.encoder.encoder[11].norm2
         bottleneck_layer_ba.register_forward_hook(make_hook("ba"))
 
+        self._setup_style_fusion(models)
+
         return NamedDict(**models)
+
+    def _get_vit_bottleneck(self, gen):
+        return gen.net.modnet.get_bottleneck()
+
+    def _setup_style_fusion(self, models):
+        self.style_token_ba = None
+        self.style_token_ab = None
+        self.style_delta = None
+        self.style_fusion_enabled = False
+        self.style_fusion_handles = {}
+
+        bottleneck_ba = self._get_vit_bottleneck(models['gen_ba'])
+        bottleneck_ab = self._get_vit_bottleneck(models['gen_ab'])
+        n_ext = bottleneck_ba.extra_tokens.shape[1]
+        feat_dim = bottleneck_ba.extra_tokens.shape[2]
+
+        def capture_style_token_ba(_module, _inputs, output):
+            # Cache style token from domain B (B->A).
+            mod = output[1]
+            mod_tokens = mod.view(mod.shape[0], n_ext, feat_dim)
+            self.style_token_ba = mod_tokens[:, -1, :].detach()
+
+        def capture_style_token_ab(_module, _inputs, output):
+            # Cache style token from domain A (A->B).
+            mod = output[1]
+            mod_tokens = mod.view(mod.shape[0], n_ext, feat_dim)
+            self.style_token_ab = mod_tokens[:, -1, :].detach()
+
+        def inject_style_token(_module, _inputs, output):
+            if not self.style_fusion_enabled or self.style_delta is None:
+                return output
+
+            result, mod = output
+            mod_tokens = mod.view(mod.shape[0], n_ext, feat_dim)
+            if mod_tokens.shape[0] != self.style_delta.shape[0]:
+                return output
+
+            mod_tokens = mod_tokens.clone()
+            mod_tokens[:, -1, :] = mod_tokens[:, -1, :] + self.style_delta
+            return (result, mod_tokens.view(mod.shape[0], -1))
+
+        self.style_fusion_handles["ba_capture"] = (
+            bottleneck_ba.register_forward_hook(capture_style_token_ba)
+        )
+        self.style_fusion_handles["ab_capture"] = (
+            bottleneck_ab.register_forward_hook(capture_style_token_ab)
+        )
+        self.style_fusion_handles["ab_inject"] = (
+            bottleneck_ab.register_forward_hook(inject_style_token)
+        )
 
     def _setup_losses(self, config):
         losses = [
@@ -508,6 +560,13 @@ class UVCGAN2_3D_stylefusion(ModelBase):
 
     def forward_dispatch(self, direction):
         if direction == 'ab':
+            if self.images.real_b is not None:
+                self._prime_style_tokens_for_ab()
+            else:
+                self.style_token_ba = None
+                self.style_token_ab = None
+                self.style_delta = None
+                self.style_fusion_enabled = False
             (
                 self.images.fake_b, self.images.reco_a,
                 self.images.consist_fake_b
@@ -551,6 +610,26 @@ class UVCGAN2_3D_stylefusion(ModelBase):
 
         else:
             raise ValueError(f"Unknown forward direction: '{direction}'")
+
+    def _prime_style_tokens_for_ab(self):
+        # Populate the style delta (A->B minus B->A) before A->B forward pass.
+        self.style_fusion_enabled = False
+        with torch.no_grad():
+            _ = self.models.gen_ba(self.images.real_b)
+            _ = self.models.gen_ab(self.images.real_a)
+
+        if self.style_token_ab is None or self.style_token_ba is None:
+            self.style_delta = None
+            self.style_fusion_enabled = False
+            return
+
+        if self.style_token_ab.shape != self.style_token_ba.shape:
+            self.style_delta = None
+            self.style_fusion_enabled = False
+            return
+
+        self.style_delta = self.style_token_ab - self.style_token_ba
+        self.style_fusion_enabled = True
 
     def forward(self):
         if self.images.real_a is not None:
@@ -768,4 +847,3 @@ class UVCGAN2_3D_stylefusion(ModelBase):
             self._accumulate_averages()
         
         self.current_step += 1
-

@@ -74,6 +74,20 @@ def parse_cmdargs():
         help='Weight for the embedding loss between adjacent slices in domain A'
     )
 
+    parser.add_argument(
+        '--use-embedding-loss',
+        dest='use_embedding_loss',
+        action='store_true',
+        help='Enable embedding loss (uses --lambda-embedding-loss weight)'
+    )
+    parser.add_argument(
+        '--no-embedding-loss',
+        dest='use_embedding_loss',
+        action='store_false',
+        help='Disable embedding loss regardless of weight'
+    )
+    parser.set_defaults(use_embedding_loss=True)
+
     add_batch_size_parser(parser, default = 1)
 
     return parser.parse_args()

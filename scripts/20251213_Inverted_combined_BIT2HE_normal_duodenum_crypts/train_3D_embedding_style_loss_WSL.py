@@ -104,7 +104,7 @@ def get_transfer_preset(cmdargs):
         return None
 
     base_model = (
-        '/home/durrlab/Desktop/Anthony/UGVSM/UVCGANv2_vHE/outdir/20251225_Inverted_combined_BIT2HE_duodenum_crypts/20251225_Inverted_combined_BIT2HE_duodenum_crypts_pretrain/'
+        '/home/durrlab-asong/Anthony/UVCGANv2_vHE/outdir/20251213_Inverted_Combined_BIT2HE_normal_duodenum_only_crypts_Pretrain/'
         'model_m(autoencoder)_d(None)'
         f"_g({GEN_PRESETS[cmdargs.gen]['model']})_pretrain-{cmdargs.gen}"
     )

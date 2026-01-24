@@ -190,7 +190,16 @@ class UVCGAN2_3D_stylefusion(ModelBase):
                 return output
 
             mod_tokens = mod_tokens.clone()
-            mod_tokens[:, -1, :] = mod_tokens[:, -1, :] + (lam * self.style_delta)
+            content_token = mod_tokens[:, -1, :]
+            style_token   = content_token + (lam * self.style_delta)
+
+            if self.style_fusion_inject == 'add':
+                mod_tokens[:, -1, :] = style_token
+            elif self.style_fusion_inject == 'adain':
+                mod_tokens[:, -1, :] = self._adain_1d(content_token, style_token)
+            else:
+                # Should be prevented by __init__ validation, but keep safe.
+                return output
             return (result, mod_tokens.view(mod.shape[0], -1))
 
         self.style_fusion_handles["ba_capture"] = (
@@ -257,6 +266,7 @@ class UVCGAN2_3D_stylefusion(ModelBase):
         lambda_subtraction_loss = 0.5, # This is the weight for the subtraction loss between z1 and z2 in the adjacent slice mode.
         lambda_embedding_loss = 0.5, # This is the weight for the embedding loss between adjacent slices.
         lambda_style_fusion = 1.0, # Scale factor for style token injection; decays with epochs (cosine schedule).
+        style_fusion_inject = 'add', # Injection method for the last ViT style token: 'add' or 'adain'.
         head_queue_size = 3,
         avg_momentum    = None,
         consistency     = None,
@@ -272,6 +282,7 @@ class UVCGAN2_3D_stylefusion(ModelBase):
         self.lambda_sub_loss = lambda_subtraction_loss # subtraction Loss
         self.lambda_embedding_loss = lambda_embedding_loss # embedding Losss
         self.lambda_style_fusion_base = lambda_style_fusion
+        self.style_fusion_inject = style_fusion_inject
         self.avg_momentum   = avg_momentum
         self.head_config    = head_config or {}
         self.consist_model  = None
@@ -280,7 +291,13 @@ class UVCGAN2_3D_stylefusion(ModelBase):
         self.current_step =0
         self.total_epochs = getattr(config, "epochs", None)
 
-        print(f"Initialized UVCGAN2_3D_embedding_loss with lambda_a={lambda_a}, lambda_b={lambda_b}, lambda_idt={lambda_idt}, lambda_consist={lambda_consist}, lambda_subtraction_loss={lambda_subtraction_loss}, lambda_embedding_loss={lambda_embedding_loss}, lambda_style_fusion={lambda_style_fusion}, avg_momentum={avg_momentum}, z_spacing={z_spacing}")
+        if self.style_fusion_inject not in ('add', 'adain'):
+            raise ValueError(
+                "style_fusion_inject must be one of: 'add', 'adain' "
+                f"(got {self.style_fusion_inject!r})"
+            )
+
+        print(f"Initialized UVCGAN2_3D_embedding_loss with lambda_a={lambda_a}, lambda_b={lambda_b}, lambda_idt={lambda_idt}, lambda_consist={lambda_consist}, lambda_subtraction_loss={lambda_subtraction_loss}, lambda_embedding_loss={lambda_embedding_loss}, lambda_style_fusion={lambda_style_fusion}, style_fusion_inject={style_fusion_inject}, avg_momentum={avg_momentum}, z_spacing={z_spacing}")
 
         # 🔥 Correct handling of debug_root
         if debug_root is not None:
@@ -332,6 +349,18 @@ class UVCGAN2_3D_stylefusion(ModelBase):
         T = self.total_epochs - 1
         scale = 0.5 * (1.0 + math.cos(math.pi * (t / T)))
         return float(self.lambda_style_fusion_base) * float(scale)
+
+    @staticmethod
+    def _adain_1d(content, style, eps = 1e-6):
+        # content/style : (N, C)
+        c_mean = content.mean(dim = 1, keepdim = True)
+        c_std  = content.var(dim = 1, unbiased = False, keepdim = True).sqrt()
+
+        s_mean = style.mean(dim = 1, keepdim = True)
+        s_std  = style.var(dim = 1, unbiased = False, keepdim = True).sqrt()
+
+        normalized = (content - c_mean) / (c_std + eps)
+        return normalized * (s_std + eps) + s_mean
 
     def _set_input(self, inputs, domain):
         set_two_domain_input(self.images, inputs, domain, self.device)

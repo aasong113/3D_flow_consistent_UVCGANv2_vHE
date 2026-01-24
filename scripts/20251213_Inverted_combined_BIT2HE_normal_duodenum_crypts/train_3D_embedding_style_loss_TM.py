@@ -82,6 +82,13 @@ def parse_cmdargs():
     )
 
     parser.add_argument(
+        '--style-fusion-inject',
+        choices=['add', 'adain'],
+        default='add',
+        help="How to inject the style delta into the A->B ViT style token: 'add' or 'adain'"
+    )
+
+    parser.add_argument(
         '--use-embedding-loss',
         dest='use_embedding_loss',
         action='store_true',
@@ -203,6 +210,7 @@ args_dict = {
         'lambda_subtraction_loss' : cmdargs.lambda_sub_loss,  # You can adjust this weight as needed
         'lambda_embedding_loss' : cmdargs.lambda_embedding_loss,  # You can adjust this weight as needed
         'lambda_style_fusion' : cmdargs.lambda_style_fusion,
+        'style_fusion_inject' : cmdargs.style_fusion_inject,
         'avg_momentum'    : 0.9999,
         'head_queue_size' : 3,
         'z_spacing' : cmdargs.z_spacing,  # Pass z_spacing to the main config for use in the model

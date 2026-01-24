@@ -1,6 +1,7 @@
 import argparse
 import sys
 import os
+from datetime import date
 # Go up 3 levels to get repo root from inside scripts/2025*/train_3D.py
 new_repo_root = os.path.abspath(os.path.join(__file__, '..', '..', '..'))
 # Remove old UVCGAN paths and add the correct one
@@ -16,6 +17,8 @@ from uvcgan2.utils.parsers import add_preset_name_parser, add_batch_size_parser
 from uvcgan2.data.adjacent_pair_dataset import AdjacentZPairDataset
 from torchvision.transforms.functional import to_pil_image
 
+
+today_str = date.today().strftime('%Y%m%d')
 
 def parse_cmdargs():
     parser = argparse.ArgumentParser(
@@ -101,6 +104,30 @@ def parse_cmdargs():
         help='Disable embedding loss regardless of weight'
     )
     parser.set_defaults(use_embedding_loss=True)
+
+    parser.add_argument(
+        '--wandb',
+        action='store_true',
+        help='Enable Weights & Biases logging'
+    )
+    parser.add_argument(
+        '--wandb-entity',
+        type=str,
+        default='sanhong113-johns-hopkins-university',
+        help='wandb entity/team'
+    )
+    parser.add_argument(
+        '--wandb-project',
+        type=str,
+        default=None,
+        help='wandb project name (defaults to an auto-generated name)'
+    )
+    parser.add_argument(
+        '--wandb-mode',
+        choices=['online', 'offline', 'disabled'],
+        default='online',
+        help="wandb mode; use 'offline' on airgapped machines"
+    )
 
     add_batch_size_parser(parser, default = 1)
 

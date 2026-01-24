@@ -16,6 +16,11 @@ from uvcgan2.data.adjacent_pair_dataset import AdjacentZPairDataset
 import os
 from torchvision.utils import save_image
 
+try:
+    import wandb  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    wandb = None
+
 def training_epoch(it_train, model, title, steps_per_epoch):
     model.train()
 
@@ -82,6 +87,17 @@ def train(args_dict):
         history.end_epoch(epoch, metrics)
         model.end_epoch(epoch)
 
+        if wandb is not None and getattr(wandb, "run", None) is not None:
+            log_dict = dict(metrics.values)
+            log_dict['epoch'] = epoch
+            # Helpful to track actual optimizer LR if schedulers are used.
+            try:
+                log_dict['lr_gen'] = model.optimizers.gen.param_groups[0]['lr']
+                log_dict['lr_disc'] = model.optimizers.disc.param_groups[0]['lr']
+            except Exception:
+                pass
+            wandb.log(log_dict, step=epoch)
+
         if epoch % args.checkpoint == 0:
             model.save(epoch)
 
@@ -105,4 +121,3 @@ def save_debug_image_pairs(batch, save_dir='debug_pairs', max_pairs=4):
 
         save_image(a_img, os.path.join(save_dir, f'{i}_A_{a_name_clean}.png'))
         save_image(b_img, os.path.join(save_dir, f'{i}_B_{b_name_clean}.png'))
-

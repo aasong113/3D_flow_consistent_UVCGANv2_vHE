@@ -22,7 +22,7 @@ from torchvision.transforms.functional import to_pil_image
 today_str = date.today().strftime('%Y%m%d')
 # Optional: set your W&B API key here for local runs.
 # Do NOT commit secrets to git.
-# os.environ["WANDB_API_KEY"] = "<your_wandb_api_key>"
+os.environ["WANDB_API_KEY"] = "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"
 
 def parse_cmdargs():
     parser = argparse.ArgumentParser(
@@ -124,7 +124,7 @@ def parse_cmdargs():
     parser.add_argument(
         '--wandb-entity',
         type=str,
-        default='sanhong113-johns-hopkins-university',
+        default='sanhong113',
         help='wandb entity/team'
     )
     parser.add_argument(

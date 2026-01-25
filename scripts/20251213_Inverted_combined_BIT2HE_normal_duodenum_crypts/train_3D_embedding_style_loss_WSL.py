@@ -32,6 +32,13 @@ def parse_cmdargs():
         '--no-pretrain', dest = 'no_pretrain', action = 'store_true',
         help = 'disable usage of the pre-trained generator'
     )
+    parser.add_argument(
+        '--base-model',
+        dest='base_model',
+        type=str,
+        default=None,
+        help='Path to a pretrained model directory (overrides the default pretrain path)'
+    )
 
     parser.add_argument(
         '--lambda-gp', dest = 'lambda_gp', type = float,
@@ -137,11 +144,15 @@ def get_transfer_preset(cmdargs):
     if cmdargs.no_pretrain:
         return None
 
-    base_model = (
-        '/home/durrlab-asong/Anthony/UVCGANv2_vHE/outdir/20251213_Inverted_Combined_BIT2HE_normal_duodenum_only_crypts_Pretrain/'
-        'model_m(autoencoder)_d(None)'
-        f"_g({GEN_PRESETS[cmdargs.gen]['model']})_pretrain-{cmdargs.gen}"
-    )
+    if cmdargs.base_model is not None:
+        base_model = cmdargs.base_model
+    else:
+        base_model = (
+            '/home/durrlab-asong/Anthony/UVCGANv2_vHE/outdir/'
+            '20251213_Inverted_Combined_BIT2HE_normal_duodenum_only_crypts_Pretrain/'
+            'model_m(autoencoder)_d(None)'
+            f"_g({GEN_PRESETS[cmdargs.gen]['model']})_pretrain-{cmdargs.gen}"
+        )
 
     return {
         'base_model' : base_model,

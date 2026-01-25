@@ -1,0 +1,50 @@
+_wandb:
+    value:
+        cli_version: 0.18.7
+        m: []
+        python_version: 3.7.13
+        t:
+            "1":
+                - 1
+                - 41
+                - 55
+            "2":
+                - 1
+                - 41
+                - 55
+            "3":
+                - 16
+                - 23
+                - 55
+            "4": 3.7.13
+            "5": 0.18.7
+            "8":
+                - 5
+            "12": 0.18.7
+            "13": linux-x86_64
+data_path_domainA:
+    value: /home/durrlab/Desktop/Anthony/data/20251225_duodenum_crypts/BIT/trainA
+data_path_domainB:
+    value: /home/durrlab/Desktop/Anthony/data/20251225_duodenum_crypts/FFPE_HE
+epochs:
+    value: 200
+lambda_emb_str:
+    value: 0p0
+lambda_embedding_loss:
+    value: 0
+lambda_sty_str:
+    value: 1p0
+lambda_style_fusion:
+    value: 1
+lambda_sub_loss:
+    value: 0
+lambda_sub_str:
+    value: 0p0
+lr_gen:
+    value: 5e-05
+style_fusion_inject:
+    value: adain
+use_embedding_loss:
+    value: true
+z_spacing:
+    value: 2

@@ -2,6 +2,7 @@ import argparse
 import sys
 import os
 from datetime import date
+
 # Go up 3 levels to get repo root from inside scripts/2025*/train_3D.py
 new_repo_root = os.path.abspath(os.path.join(__file__, '..', '..', '..'))
 # Remove old UVCGAN paths and add the correct one
@@ -17,12 +18,11 @@ from uvcgan2.utils.parsers import add_preset_name_parser, add_batch_size_parser
 from uvcgan2.data.adjacent_pair_dataset import AdjacentZPairDataset
 from torchvision.transforms.functional import to_pil_image
 
-
 today_str = date.today().strftime('%Y%m%d')
 
 def parse_cmdargs():
     parser = argparse.ArgumentParser(
-        description = '20260113_Inverted_Combined_BIT2HE_normal_duodenum_only_crypts_Train_3DFlow'
+        description = f'{today_str}_BIT2HE_normal_duodenum_only_crypts_3DFlow'
     )
 
     add_preset_name_parser(parser, 'gen',  GEN_PRESETS, 'uvcgan2')
@@ -31,6 +31,13 @@ def parse_cmdargs():
     parser.add_argument(
         '--no-pretrain', dest = 'no_pretrain', action = 'store_true',
         help = 'disable usage of the pre-trained generator'
+    )
+    parser.add_argument(
+        '--base-model',
+        dest='base_model',
+        type=str,
+        default=None,
+        help='Path to a pretrained model directory (overrides the default pretrain path)'
     )
 
     parser.add_argument(
@@ -137,11 +144,19 @@ def get_transfer_preset(cmdargs):
     if cmdargs.no_pretrain:
         return None
 
-    base_model = (
-        '/home/durrlab/Desktop/Anthony/UGVSM/UVCGANv2_vHE/outdir/20251225_Inverted_combined_BIT2HE_duodenum_crypts/20251225_Inverted_combined_BIT2HE_duodenum_crypts_pretrain/'
-        'model_m(autoencoder)_d(None)'
-        f"_g({GEN_PRESETS[cmdargs.gen]['model']})_pretrain-{cmdargs.gen}"
-    )
+    if cmdargs.base_model is not None:
+        base_model = cmdargs.base_model
+    else:
+        pretrain_root = (
+            '/home/durrlab/Desktop/Anthony/UGVSM/UVCGANv2_vHE/outdir/'
+            '20251225_Inverted_combined_BIT2HE_duodenum_crypts/'
+            '20251225_Inverted_combined_BIT2HE_duodenum_crypts_pretrain'
+        )
+        model_dir = (
+            'model_m(autoencoder)_d(None)'
+            f"_g({GEN_PRESETS[cmdargs.gen]['model']})_pretrain-{cmdargs.gen}"
+        )
+        base_model = os.path.join(pretrain_root, model_dir)
 
     return {
         'base_model' : base_model,
@@ -161,9 +176,17 @@ if not cmdargs.use_embedding_loss:
 data_path_domainA = os.path.join(cmdargs.root_data_path, 'BIT', 'trainA')
 data_path_domainB = os.path.join(cmdargs.root_data_path, 'FFPE_HE')
 
-model_save_dir = os.path.join(ROOT_OUTDIR, '20260113_Inverted_Combined_BIT2HE_normal_duodenum_only_crypts_Train_3DFlow')
+os.environ['WANDB_API_KEY'] = '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'
+
+model_save_dir = os.path.join(ROOT_OUTDIR, f'{today_str}_BIT2HE_normal_duodenum_only_crypts_3DFlow')
 lambda_sub_str = str(cmdargs.lambda_sub_loss).replace('.', 'p')
 lambda_emb_str = str(cmdargs.lambda_embedding_loss).replace('.', 'p')
+lambda_sty_str = str(cmdargs.lambda_style_fusion).replace('.', 'p')
+wandb_project = cmdargs.wandb_project or (
+    f'{today_str}_duodenum_only_crypts_3DFlow_'
+    f'zspacing={cmdargs.z_spacing}slices_'
+    f'lamsub={lambda_sub_str}_lamemb={lambda_emb_str}_lamSty={lambda_sty_str}'
+)
 
 # ✅ BUILD dataset config — domain A will use the AdjacentZPairDataset manually injected below
 dataset_config = [
@@ -241,7 +264,7 @@ args_dict = {
         'avg_momentum'    : 0.9999,
         'head_queue_size' : 3,
         'z_spacing' : cmdargs.z_spacing,  # Pass z_spacing to the main config for use in the model
-        'debug_root': os.path.join(model_save_dir, f'debug_images_zspacing={cmdargs.z_spacing}_lambdsub={lambda_sub_str}_lambdemb={lambda_emb_str}'),  # Optional: directory to save debug images from subtraction loss
+        'debug_root': os.path.join(model_save_dir, f'debug_images_zspacing={cmdargs.z_spacing}_lambdsub={lambda_sub_str}_lambdemb={lambda_emb_str}_lamSty={lambda_sty_str}'),  # Optional: directory to save debug images from subtraction loss
         'head_config'     : {
             'name'            : BH_PRESETS[cmdargs.head],
             'input_features'  : 512,
@@ -266,7 +289,7 @@ args_dict = {
         f':{cmdargs.lambda_cyc}:{cmdargs.lambda_gp}:{cmdargs.lr_gen})'
     ),
 
-    'outdir'     : os.path.join(model_save_dir, f'20260106_Inverted_Combined_BIT2HE_normal_duodenum_only_crypts_Train_3DFlow_zspacing={cmdargs.z_spacing}slices_lambdsub={lambda_sub_str}_lambdemb={lambda_emb_str}'),
+    'outdir'     : os.path.join(model_save_dir, f'{today_str}_duodenum_only_crypts_3DFlow_zspacing={cmdargs.z_spacing}slices_lamsub={lambda_sub_str}_lamemb={lambda_emb_str}_lamSty={lambda_sty_str}'),
     'log_level'  : 'DEBUG',
     'checkpoint' : 10,
 }
@@ -295,6 +318,46 @@ imgB.save(save_path_B)
 
 print(f"Saved debug images to:\n{save_path_A}\n{save_path_B}")
 
+if cmdargs.wandb and cmdargs.wandb_mode != 'disabled':
+    # Keep wandb optional; training should still run if wandb is not installed.
+    try:
+        import wandb  # type: ignore
+    except Exception as e:
+        print(f"[wandb] Disabled (import failed): {e}")
+        wandb = None
+    else:
+        os.environ['WANDB_MODE'] = cmdargs.wandb_mode
+        try:
+            wandb.init(
+                entity = cmdargs.wandb_entity,
+                project = wandb_project,
+                config = {
+                    'data_path_domainA'     : data_path_domainA,
+                    'data_path_domainB'     : data_path_domainB,
+                    'lambda_sub_str'        : lambda_sub_str,
+                    'lambda_emb_str'        : lambda_emb_str,
+                    'lambda_sty_str'        : lambda_sty_str,
+                    'z_spacing'             : cmdargs.z_spacing,
+                    'lambda_sub_loss'       : cmdargs.lambda_sub_loss,
+                    'lambda_embedding_loss' : cmdargs.lambda_embedding_loss,
+                    'lambda_style_fusion'   : cmdargs.lambda_style_fusion,
+                    'style_fusion_inject'   : cmdargs.style_fusion_inject,
+                    'use_embedding_loss'    : cmdargs.use_embedding_loss,
+                    'epochs'                : args_dict['epochs'],
+                    'lr_gen'                : cmdargs.lr_gen,
+                },
+            )
+        except Exception as e:
+            print(f"[wandb] Disabled (init failed): {e}")
+            wandb = None
+
 
 # ✅ Final call
 train(args_dict)
+
+try:
+    import wandb  # type: ignore
+except Exception:
+    wandb = None
+if wandb is not None and getattr(wandb, "run", None) is not None:
+    wandb.finish()

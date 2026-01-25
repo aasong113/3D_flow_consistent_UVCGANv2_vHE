@@ -21,6 +21,8 @@ try:
 except Exception:  # pragma: no cover - optional dependency
     wandb = None
 
+
+
 def training_epoch(it_train, model, title, steps_per_epoch):
     model.train()
 

@@ -1,0 +1,28 @@
+2026-01-24 20:01:24,414 INFO    MainThread:93312 [wandb_setup.py:_flush():79] Current SDK version is 0.18.7
+2026-01-24 20:01:24,414 INFO    MainThread:93312 [wandb_setup.py:_flush():79] Configure stats pid to 93312
+2026-01-24 20:01:24,415 INFO    MainThread:93312 [wandb_setup.py:_flush():79] Loading settings from /home/durrlab/.config/wandb/settings
+2026-01-24 20:01:24,415 INFO    MainThread:93312 [wandb_setup.py:_flush():79] Loading settings from /home/durrlab/Desktop/Anthony/UGVSM/3D_flow_consistent_UVCGANv2_vHE/wandb/settings
+2026-01-24 20:01:24,415 INFO    MainThread:93312 [wandb_setup.py:_flush():79] Loading settings from environment variables: {'mode': 'online'}
+2026-01-24 20:01:24,415 INFO    MainThread:93312 [wandb_setup.py:_flush():79] Applying setup settings: {'mode': 'online', '_disable_service': None}
+2026-01-24 20:01:24,415 INFO    MainThread:93312 [wandb_setup.py:_flush():79] Inferring run settings from compute environment: {'program_relpath': 'scripts/20251213_Inverted_combined_BIT2HE_normal_duodenum_crypts/train_3D_embedding_style_loss_TM.py', 'program_abspath': '/home/durrlab/Desktop/Anthony/UGVSM/3D_flow_consistent_UVCGANv2_vHE/scripts/20251213_Inverted_combined_BIT2HE_normal_duodenum_crypts/train_3D_embedding_style_loss_TM.py', 'program': '/home/durrlab/Desktop/Anthony/UGVSM/3D_flow_consistent_UVCGANv2_vHE/scripts/20251213_Inverted_combined_BIT2HE_normal_duodenum_crypts/train_3D_embedding_style_loss_TM.py'}
+2026-01-24 20:01:24,415 INFO    MainThread:93312 [wandb_setup.py:_flush():79] Applying login settings: {}
+2026-01-24 20:01:24,415 INFO    MainThread:93312 [wandb_init.py:_log_setup():533] Logging user logs to /home/durrlab/Desktop/Anthony/UGVSM/3D_flow_consistent_UVCGANv2_vHE/wandb/run-20260124_200124-uks3d9es/logs/debug.log
+2026-01-24 20:01:24,415 INFO    MainThread:93312 [wandb_init.py:_log_setup():534] Logging internal logs to /home/durrlab/Desktop/Anthony/UGVSM/3D_flow_consistent_UVCGANv2_vHE/wandb/run-20260124_200124-uks3d9es/logs/debug-internal.log
+2026-01-24 20:01:24,415 INFO    MainThread:93312 [wandb_init.py:init():619] calling init triggers
+2026-01-24 20:01:24,415 INFO    MainThread:93312 [wandb_init.py:init():627] wandb.init called with sweep_config: {}
+config: {'data_path_domainA': '/home/durrlab/Desktop/Anthony/data/20251225_duodenum_crypts/BIT/trainA', 'data_path_domainB': '/home/durrlab/Desktop/Anthony/data/20251225_duodenum_crypts/FFPE_HE', 'lambda_sub_str': '0p0', 'lambda_emb_str': '0p0', 'lambda_sty_str': '1p0', 'z_spacing': 2, 'lambda_sub_loss': 0.0, 'lambda_embedding_loss': 0.0, 'lambda_style_fusion': 1.0, 'style_fusion_inject': 'adain', 'use_embedding_loss': True, 'epochs': 200, 'lr_gen': 5e-05}
+2026-01-24 20:01:24,415 INFO    MainThread:93312 [wandb_init.py:init():669] starting backend
+2026-01-24 20:01:24,416 INFO    MainThread:93312 [wandb_init.py:init():673] sending inform_init request
+2026-01-24 20:01:24,422 INFO    MainThread:93312 [backend.py:_multiprocessing_setup():106] multiprocessing start_methods=fork,spawn,forkserver, using: spawn
+2026-01-24 20:01:24,422 INFO    MainThread:93312 [wandb_init.py:init():686] backend started and connected
+2026-01-24 20:01:24,433 INFO    MainThread:93312 [wandb_init.py:init():781] updated telemetry
+2026-01-24 20:01:24,458 INFO    MainThread:93312 [wandb_init.py:init():814] communicating run to backend with 90.0 second timeout
+2026-01-24 20:01:24,646 ERROR   MainThread:93312 [wandb_init.py:init():841] encountered error: failed to upsert bucket: returned error 403 Forbidden: {"errors":[{"message":"permission denied","path":["upsertBucket"],"extensions":{"code":"PERMISSION_ERROR"}}],"data":{"upsertBucket":null}}
+2026-01-24 20:01:24,646 ERROR   MainThread:93312 [wandb_init.py:init():1266] error in wandb.init()
+Traceback (most recent call last):
+  File "/home/durrlab/anaconda3/envs/uvcgan2/lib/python3.7/site-packages/wandb/sdk/wandb_init.py", line 1256, in init
+    return wi.init()
+  File "/home/durrlab/anaconda3/envs/uvcgan2/lib/python3.7/site-packages/wandb/sdk/wandb_init.py", line 847, in init
+    raise error
+wandb.errors.errors.CommError: failed to upsert bucket: returned error 403 Forbidden: {"errors":[{"message":"permission denied","path":["upsertBucket"],"extensions":{"code":"PERMISSION_ERROR"}}],"data":{"upsertBucket":null}}
+2026-01-24 20:01:24,655 WARNING MsgRouterThr:93312 [router.py:message_loop():75] message_loop has been closed

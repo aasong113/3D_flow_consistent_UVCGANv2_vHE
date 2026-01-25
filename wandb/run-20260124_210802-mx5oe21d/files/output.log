@@ -1,0 +1,202 @@
+DEBUG: Dataset config for domain A: <uvcgan2.config.data_config.DatasetConfig object at 0x724d303bae60>
+DEBUG: Dataset config for domain B: <uvcgan2.config.data_config.DatasetConfig object at 0x724d303b20f0>
+[AdjacentZPairDataset] Scanning directory: /home/durrlab/Desktop/Anthony/data/20251225_duodenum_crypts/BIT/trainA
+[AdjacentZPairDataset] Found 5671 .tif files
+[AdjacentZPairDataset] Found 169 (prefix, P) groups
+[AdjacentZPairDataset] Found 5333 valid Z-pairs
+Starting training...
+{
+    "batch_size": 1,
+    "data": {
+        "datasets": [
+            {
+                "dataset": {
+                    "name": "adjacent-z-pairs",
+                    "domain": "A",
+                    "path": "/home/durrlab/Desktop/Anthony/data/20251225_duodenum_crypts/BIT/trainA",
+                    "z_spacing": 2,
+                    "debug_root": "/home/durrlab/Desktop/Anthony/data/20251225_duodenum_crypts/debug_images"
+                },
+                "shape": [
+                    3,
+                    512,
+                    512
+                ],
+                "transform_train": null,
+                "transform_test": null
+            },
+            {
+                "dataset": {
+                    "name": "cyclegan",
+                    "domain": "B",
+                    "path": "/home/durrlab/Desktop/Anthony/data/20251225_duodenum_crypts/FFPE_HE"
+                },
+                "shape": [
+                    3,
+                    512,
+                    512
+                ],
+                "transform_train": [
+                    {
+                        "name": "resize",
+                        "size": 512
+                    },
+                    {
+                        "name": "random-crop",
+                        "size": 512
+                    },
+                    "random-flip-horizontal"
+                ],
+                "transform_test": null
+            }
+        ],
+        "merge_type": "unpaired",
+        "workers": 1
+    },
+    "epochs": 200,
+    "discriminator": {
+        "model": "basic",
+        "model_args": {
+            "shrink_output": false
+        },
+        "optimizer": {
+            "name": "Adam",
+            "lr": 0.0001,
+            "betas": [
+                0.5,
+                0.99
+            ]
+        },
+        "weight_init": {
+            "name": "normal",
+            "init_gain": 0.02
+        },
+        "spectr_norm": true
+    },
+    "generator": {
+        "model": "vit-modnet",
+        "model_args": {
+            "features": 384,
+            "n_heads": 6,
+            "n_blocks": 12,
+            "ffn_features": 1536,
+            "embed_features": 384,
+            "activ": "gelu",
+            "norm": "layer",
+            "modnet_features_list": [
+                48,
+                96,
+                192,
+                384
+            ],
+            "modnet_activ": "leakyrelu",
+            "modnet_norm": null,
+            "modnet_downsample": "conv",
+            "modnet_upsample": "upsample-conv",
+            "modnet_rezero": false,
+            "modnet_demod": true,
+            "rezero": true,
+            "activ_output": "sigmoid",
+            "style_rezero": true,
+            "style_bias": true,
+            "n_ext": 1
+        },
+        "optimizer": {
+            "name": "Adam",
+            "lr": 5e-05,
+            "betas": [
+                0.5,
+                0.99
+            ]
+        },
+        "weight_init": {
+            "name": "normal",
+            "init_gain": 0.02
+        },
+        "spectr_norm": false
+    },
+    "model": "uvcgan2_3D_stylefusion",
+    "model_args": {
+        "lambda_a": 10.0,
+        "lambda_b": 10.0,
+        "lambda_idt": 0.5,
+        "lambda_subtraction_loss": 0.0,
+        "lambda_embedding_loss": 0.0,
+        "lambda_style_fusion": 1.0,
+        "style_fusion_inject": "adain",
+        "avg_momentum": 0.9999,
+        "head_queue_size": 3,
+        "z_spacing": 2,
+        "debug_root": "outdir/20260124_BIT2HE_normal_duodenum_only_crypts_3DFlow/debug_images_zspacing=2_lambdsub=0p0_lambdemb=0p0_lamSty=1p0",
+        "head_config": {
+            "name": "batch-norm-2d",
+            "input_features": 512,
+            "output_features": 1,
+            "activ": "leakyrelu"
+        }
+    },
+    "loss": "lsgan",
+    "gradient_penalty": {
+        "center": 0,
+        "lambda_gp": 0.01,
+        "mix_type": "real-fake",
+        "reduction": "mean"
+    },
+    "seed": 0,
+    "scheduler": null,
+    "steps_per_epoch": 2000,
+    "transfer": {
+        "base_model": "/home/durrlab/Desktop/Anthony/UGVSM/UVCGANv2_vHE/outdir/20251225_Inverted_combined_BIT2HE_duodenum_crypts/20251225_Inverted_combined_BIT2HE_duodenum_crypts_pretrain/model_m(autoencoder)_d(None)_g(vit-modnet)_pretrain-uvcgan2",
+        "transfer_map": {
+            "gen_ab": "encoder",
+            "gen_ba": "encoder"
+        },
+        "strict": true,
+        "allow_partial": false,
+        "fuzzy": null
+    }
+}
+Initialized UVCGAN2_3D_embedding_loss with lambda_a=10.0, lambda_b=10.0, lambda_idt=0.5, lambda_consist=0, lambda_subtraction_loss=0.0, lambda_embedding_loss=0.0, lambda_style_fusion=1.0, style_fusion_inject=adain, avg_momentum=0.9999, z_spacing=2
+/home/durrlab/anaconda3/envs/uvcgan2/lib/python3.7/site-packages/torch/functional.py:478: UserWarning: torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument. (Triggered internally at  /opt/conda/conda-bld/pytorch_1659484809535/work/aten/src/ATen/native/TensorShape.cpp:2894.)
+  return _VF.meshgrid(tensors, **kwargs)  # type: ignore[attr-defined]
+[2026-01-24 21:08:06,782] [uvcgan2.base]: DEBUG Initializnig network with normal
+[2026-01-24 21:08:07,360] [uvcgan2.base]: DEBUG Initializnig network with normal
+[2026-01-24 21:08:07,861] [uvcgan2.base]: DEBUG Initializnig network with normal
+Traceback (most recent call last):
+  File "/home/durrlab/Desktop/Anthony/UGVSM/3D_flow_consistent_UVCGANv2_vHE/scripts/20251213_Inverted_combined_BIT2HE_normal_duodenum_crypts/train_3D_embedding_style_loss_TM.py", line 356, in <module>
+    train(args_dict)
+  File "/home/durrlab/Desktop/Anthony/UGVSM/3D_flow_consistent_UVCGANv2_vHE/uvcgan2/train/train.py", line 74, in train
+    args.savedir, args.config, is_train = True, device = device
+  File "/home/durrlab/Desktop/Anthony/UGVSM/3D_flow_consistent_UVCGANv2_vHE/uvcgan2/cgan/__init__.py", line 32, in construct_model
+    device = device, **config.model_args
+  File "/home/durrlab/Desktop/Anthony/UGVSM/3D_flow_consistent_UVCGANv2_vHE/uvcgan2/cgan/__init__.py", line 27, in select_model
+    return CGAN_MODELS[name](**kwargs)
+  File "/home/durrlab/Desktop/Anthony/UGVSM/3D_flow_consistent_UVCGANv2_vHE/uvcgan2/cgan/uvcgan2_3D_emb_sub_stylefusion.py", line 328, in __init__
+    super().__init__(savedir, config, is_train, device)
+  File "/home/durrlab/Desktop/Anthony/UGVSM/3D_flow_consistent_UVCGANv2_vHE/uvcgan2/cgan/model_base.py", line 28, in __init__
+    self.models = self._setup_models(config)
+  File "/home/durrlab/Desktop/Anthony/UGVSM/3D_flow_consistent_UVCGANv2_vHE/uvcgan2/cgan/uvcgan2_3D_emb_sub_stylefusion.py", line 101, in _setup_models
+    config.generator, shape_b, shape_a, self.device
+  File "/home/durrlab/Desktop/Anthony/UGVSM/3D_flow_consistent_UVCGANv2_vHE/uvcgan2/models/generator/__init__.py", line 29, in construct_generator
+    **model_config.model_args
+  File "/home/durrlab/Desktop/Anthony/UGVSM/3D_flow_consistent_UVCGANv2_vHE/uvcgan2/models/generator/__init__.py", line 16, in select_generator
+    return ViTModNetGenerator(**kwargs)
+  File "/home/durrlab/Desktop/Anthony/UGVSM/3D_flow_consistent_UVCGANv2_vHE/uvcgan2/models/generator/vitmodnet.py", line 49, in __init__
+    n_ext       = n_ext,
+  File "/home/durrlab/Desktop/Anthony/UGVSM/3D_flow_consistent_UVCGANv2_vHE/uvcgan2/torch/layers/transformer.py", line 330, in __init__
+    features, ffn_features, n_heads, n_blocks, activ, norm, rezero
+  File "/home/durrlab/Desktop/Anthony/UGVSM/3D_flow_consistent_UVCGANv2_vHE/uvcgan2/torch/layers/transformer.py", line 157, in __init__
+    ) for _ in range(n_blocks)
+  File "/home/durrlab/Desktop/Anthony/UGVSM/3D_flow_consistent_UVCGANv2_vHE/uvcgan2/torch/layers/transformer.py", line 157, in <listcomp>
+    ) for _ in range(n_blocks)
+  File "/home/durrlab/Desktop/Anthony/UGVSM/3D_flow_consistent_UVCGANv2_vHE/uvcgan2/torch/layers/transformer.py", line 114, in __init__
+    self.atten = nn.MultiheadAttention(features, n_heads)
+  File "/home/durrlab/anaconda3/envs/uvcgan2/lib/python3.7/site-packages/torch/nn/modules/activation.py", line 983, in __init__
+    self._reset_parameters()
+  File "/home/durrlab/anaconda3/envs/uvcgan2/lib/python3.7/site-packages/torch/nn/modules/activation.py", line 987, in _reset_parameters
+    xavier_uniform_(self.in_proj_weight)
+  File "/home/durrlab/anaconda3/envs/uvcgan2/lib/python3.7/site-packages/torch/nn/init.py", line 327, in xavier_uniform_
+    return _no_grad_uniform_(tensor, -a, a)
+  File "/home/durrlab/anaconda3/envs/uvcgan2/lib/python3.7/site-packages/torch/nn/init.py", line 14, in _no_grad_uniform_
+    return tensor.uniform_(a, b)
+KeyboardInterrupt

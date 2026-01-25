@@ -22,7 +22,7 @@ from torchvision.transforms.functional import to_pil_image
 today_str = date.today().strftime('%Y%m%d')
 # Optional: set your W&B API key here for local runs.
 # Do NOT commit secrets to git.
-os.environ["WANDB_API_KEY"] = "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"
+os.environ["WANDB_API_KEY"] = ""
 
 def parse_cmdargs():
     parser = argparse.ArgumentParser(

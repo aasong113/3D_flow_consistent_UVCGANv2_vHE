@@ -20,7 +20,9 @@ from uvcgan2.data.adjacent_pair_dataset import AdjacentZPairDataset
 from torchvision.transforms.functional import to_pil_image
 
 today_str = date.today().strftime('%Y%m%d')
-WANDB_API_KEY = None
+# Optional: set your W&B API key here for local runs.
+# Do NOT commit secrets to git.
+# os.environ["WANDB_API_KEY"] = "<your_wandb_api_key>"
 
 def parse_cmdargs():
     parser = argparse.ArgumentParser(
@@ -326,44 +328,43 @@ if cmdargs.wandb and cmdargs.wandb_mode != 'disabled':
         print(f"[wandb] Disabled (import failed): {e}")
         wandb = None
     else:
-        if wandb is not None and WANDB_API_KEY:
-            os.environ["WANDB_API_KEY"] = WANDB_API_KEY.strip()
-        if wandb is not None and not os.environ.get("WANDB_API_KEY"):
+        if not os.environ.get("WANDB_API_KEY"):
             if not sys.stdin.isatty():
                 print("[wandb] Disabled (no WANDB_API_KEY in non-interactive session)")
                 wandb = None
             else:
                 os.environ["WANDB_API_KEY"] = getpass.getpass("W&B API key: ").strip()
-        os.environ['WANDB_MODE'] = cmdargs.wandb_mode
-        try:
-            if os.environ.get("WANDB_API_KEY"):
-                try:
-                    wandb.login(key=os.environ["WANDB_API_KEY"], relogin=True)
-                except Exception as e:
-                    print(f"[wandb] Disabled (login failed): {e}")
-                    raise
-            wandb.init(
-                entity = cmdargs.wandb_entity,
-                project = wandb_project,
-                config = {
-                    'data_path_domainA'     : data_path_domainA,
-                    'data_path_domainB'     : data_path_domainB,
-                    'lambda_sub_str'        : lambda_sub_str,
-                    'lambda_emb_str'        : lambda_emb_str,
-                    'lambda_sty_str'        : lambda_sty_str,
-                    'z_spacing'             : cmdargs.z_spacing,
-                    'lambda_sub_loss'       : cmdargs.lambda_sub_loss,
-                    'lambda_embedding_loss' : cmdargs.lambda_embedding_loss,
-                    'lambda_style_fusion'   : cmdargs.lambda_style_fusion,
-                    'style_fusion_inject'   : cmdargs.style_fusion_inject,
-                    'use_embedding_loss'    : cmdargs.use_embedding_loss,
-                    'epochs'                : args_dict['epochs'],
-                    'lr_gen'                : cmdargs.lr_gen,
-                },
-            )
-        except Exception as e:
-            print(f"[wandb] Disabled (init failed): {e}")
-            wandb = None
+        if wandb is not None:
+            os.environ['WANDB_MODE'] = cmdargs.wandb_mode
+            try:
+                if os.environ.get("WANDB_API_KEY"):
+                    try:
+                        wandb.login(key=os.environ["WANDB_API_KEY"], relogin=True)
+                    except Exception as e:
+                        print(f"[wandb] Disabled (login failed): {e}")
+                        raise
+                wandb.init(
+                    entity = cmdargs.wandb_entity,
+                    project = wandb_project,
+                    config = {
+                        'data_path_domainA'     : data_path_domainA,
+                        'data_path_domainB'     : data_path_domainB,
+                        'lambda_sub_str'        : lambda_sub_str,
+                        'lambda_emb_str'        : lambda_emb_str,
+                        'lambda_sty_str'        : lambda_sty_str,
+                        'z_spacing'             : cmdargs.z_spacing,
+                        'lambda_sub_loss'       : cmdargs.lambda_sub_loss,
+                        'lambda_embedding_loss' : cmdargs.lambda_embedding_loss,
+                        'lambda_style_fusion'   : cmdargs.lambda_style_fusion,
+                        'style_fusion_inject'   : cmdargs.style_fusion_inject,
+                        'use_embedding_loss'    : cmdargs.use_embedding_loss,
+                        'epochs'                : args_dict['epochs'],
+                        'lr_gen'                : cmdargs.lr_gen,
+                    },
+                )
+            except Exception as e:
+                print(f"[wandb] Disabled (init failed): {e}")
+                wandb = None
 
 
 # ✅ Final call

@@ -118,6 +118,18 @@ def parse_cmdargs():
         help='Enable Weights & Biases logging'
     )
     parser.add_argument(
+        '--wandb-api-key',
+        type=str,
+        default=None,
+        help='W&B API key (prefer using WANDB_API_KEY env var or `wandb login` instead of passing via CLI)'
+    )
+    parser.add_argument(
+        '--wandb-api-key-file',
+        type=str,
+        default=None,
+        help='Path to a file containing the W&B API key (recommended over --wandb-api-key)'
+    )
+    parser.add_argument(
         '--wandb-entity',
         type=str,
         default='sanhong113-johns-hopkins-university',
@@ -175,8 +187,6 @@ if not cmdargs.use_embedding_loss:
 # /home/durrlab-asong/Anthony/subset_training_data_crypts
 data_path_domainA = os.path.join(cmdargs.root_data_path, 'BIT', 'trainA')
 data_path_domainB = os.path.join(cmdargs.root_data_path, 'FFPE_HE')
-
-os.environ['WANDB_API_KEY'] = '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'
 
 model_save_dir = os.path.join(ROOT_OUTDIR, f'{today_str}_BIT2HE_normal_duodenum_only_crypts_3DFlow')
 lambda_sub_str = str(cmdargs.lambda_sub_loss).replace('.', 'p')
@@ -326,8 +336,23 @@ if cmdargs.wandb and cmdargs.wandb_mode != 'disabled':
         print(f"[wandb] Disabled (import failed): {e}")
         wandb = None
     else:
+        if cmdargs.wandb_api_key_file:
+            try:
+                with open(cmdargs.wandb_api_key_file, "r", encoding="utf-8") as f:
+                    os.environ["WANDB_API_KEY"] = f.read().strip()
+            except Exception as e:
+                print(f"[wandb] Disabled (failed to read --wandb-api-key-file): {e}")
+                wandb = None
+        if wandb is not None and cmdargs.wandb_api_key:
+            os.environ["WANDB_API_KEY"] = cmdargs.wandb_api_key.strip()
         os.environ['WANDB_MODE'] = cmdargs.wandb_mode
         try:
+            if os.environ.get("WANDB_API_KEY"):
+                try:
+                    wandb.login(key=os.environ["WANDB_API_KEY"], relogin=True)
+                except Exception as e:
+                    print(f"[wandb] Disabled (login failed): {e}")
+                    raise
             wandb.init(
                 entity = cmdargs.wandb_entity,
                 project = wandb_project,

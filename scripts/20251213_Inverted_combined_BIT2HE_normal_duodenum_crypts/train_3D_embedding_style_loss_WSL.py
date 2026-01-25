@@ -118,6 +118,18 @@ def parse_cmdargs():
         help='Enable Weights & Biases logging'
     )
     parser.add_argument(
+        '--wandb-api-key',
+        type=str,
+        default=None,
+        help='W&B API key (prefer using WANDB_API_KEY env var or `wandb login` instead of passing via CLI)'
+    )
+    parser.add_argument(
+        '--wandb-api-key-file',
+        type=str,
+        default=None,
+        help='Path to a file containing the W&B API key (recommended over --wandb-api-key)'
+    )
+    parser.add_argument(
         '--wandb-entity',
         type=str,
         default='sanhong113-johns-hopkins-university',
@@ -320,26 +332,41 @@ if cmdargs.wandb and cmdargs.wandb_mode != 'disabled':
         print(f"[wandb] Disabled (import failed): {e}")
         wandb = None
     else:
+        if cmdargs.wandb_api_key_file:
+            try:
+                with open(cmdargs.wandb_api_key_file, "r", encoding="utf-8") as f:
+                    os.environ["WANDB_API_KEY"] = f.read().strip()
+            except Exception as e:
+                print(f"[wandb] Disabled (failed to read --wandb-api-key-file): {e}")
+                wandb = None
+        if wandb is not None and cmdargs.wandb_api_key:
+            os.environ["WANDB_API_KEY"] = cmdargs.wandb_api_key.strip()
         os.environ['WANDB_MODE'] = cmdargs.wandb_mode
-        wandb.init(
-            entity = cmdargs.wandb_entity,
-            project = wandb_project,
-            config = {
-                'data_path_domainA'     : data_path_domainA,
-                'data_path_domainB'     : data_path_domainB,
-                'lambda_sub_str'        : lambda_sub_str,
-                'lambda_emb_str'        : lambda_emb_str,
-                'lambda_sty_str'        : lambda_sty_str,
-                'z_spacing'             : cmdargs.z_spacing,
-                'lambda_sub_loss'       : cmdargs.lambda_sub_loss,
-                'lambda_embedding_loss' : cmdargs.lambda_embedding_loss,
-                'lambda_style_fusion'   : cmdargs.lambda_style_fusion,
-                'style_fusion_inject'   : cmdargs.style_fusion_inject,
-                'use_embedding_loss'    : cmdargs.use_embedding_loss,
-                'epochs'                : args_dict['epochs'],
-                'lr_gen'                : cmdargs.lr_gen,
-            },
-        )
+        try:
+            if os.environ.get("WANDB_API_KEY"):
+                wandb.login(key=os.environ["WANDB_API_KEY"], relogin=True)
+            wandb.init(
+                entity = cmdargs.wandb_entity,
+                project = wandb_project,
+                config = {
+                    'data_path_domainA'     : data_path_domainA,
+                    'data_path_domainB'     : data_path_domainB,
+                    'lambda_sub_str'        : lambda_sub_str,
+                    'lambda_emb_str'        : lambda_emb_str,
+                    'lambda_sty_str'        : lambda_sty_str,
+                    'z_spacing'             : cmdargs.z_spacing,
+                    'lambda_sub_loss'       : cmdargs.lambda_sub_loss,
+                    'lambda_embedding_loss' : cmdargs.lambda_embedding_loss,
+                    'lambda_style_fusion'   : cmdargs.lambda_style_fusion,
+                    'style_fusion_inject'   : cmdargs.style_fusion_inject,
+                    'use_embedding_loss'    : cmdargs.use_embedding_loss,
+                    'epochs'                : args_dict['epochs'],
+                    'lr_gen'                : cmdargs.lr_gen,
+                },
+            )
+        except Exception as e:
+            print(f"[wandb] Disabled (init failed): {e}")
+            wandb = None
 
 
 # ✅ Final call

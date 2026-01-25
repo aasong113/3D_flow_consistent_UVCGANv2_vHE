@@ -1,4 +1,5 @@
 import argparse
+import getpass
 import sys
 import os
 from datetime import date
@@ -19,6 +20,7 @@ from uvcgan2.data.adjacent_pair_dataset import AdjacentZPairDataset
 from torchvision.transforms.functional import to_pil_image
 
 today_str = date.today().strftime('%Y%m%d')
+WANDB_API_KEY = None
 
 def parse_cmdargs():
     parser = argparse.ArgumentParser(
@@ -116,18 +118,6 @@ def parse_cmdargs():
         '--wandb',
         action='store_true',
         help='Enable Weights & Biases logging'
-    )
-    parser.add_argument(
-        '--wandb-api-key',
-        type=str,
-        default=None,
-        help='W&B API key (prefer using WANDB_API_KEY env var or `wandb login` instead of passing via CLI)'
-    )
-    parser.add_argument(
-        '--wandb-api-key-file',
-        type=str,
-        default=None,
-        help='Path to a file containing the W&B API key (recommended over --wandb-api-key)'
     )
     parser.add_argument(
         '--wandb-entity',
@@ -336,15 +326,14 @@ if cmdargs.wandb and cmdargs.wandb_mode != 'disabled':
         print(f"[wandb] Disabled (import failed): {e}")
         wandb = None
     else:
-        if cmdargs.wandb_api_key_file:
-            try:
-                with open(cmdargs.wandb_api_key_file, "r", encoding="utf-8") as f:
-                    os.environ["WANDB_API_KEY"] = f.read().strip()
-            except Exception as e:
-                print(f"[wandb] Disabled (failed to read --wandb-api-key-file): {e}")
+        if wandb is not None and WANDB_API_KEY:
+            os.environ["WANDB_API_KEY"] = WANDB_API_KEY.strip()
+        if wandb is not None and not os.environ.get("WANDB_API_KEY"):
+            if not sys.stdin.isatty():
+                print("[wandb] Disabled (no WANDB_API_KEY in non-interactive session)")
                 wandb = None
-        if wandb is not None and cmdargs.wandb_api_key:
-            os.environ["WANDB_API_KEY"] = cmdargs.wandb_api_key.strip()
+            else:
+                os.environ["WANDB_API_KEY"] = getpass.getpass("W&B API key: ").strip()
         os.environ['WANDB_MODE'] = cmdargs.wandb_mode
         try:
             if os.environ.get("WANDB_API_KEY"):

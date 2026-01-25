@@ -189,18 +189,26 @@ class UVCGAN2_3D_stylefusion(ModelBase):
             if lam == 0.0:
                 return output
 
+            # Important: avoid in-place modification of a view that is also used
+            # to compute `style_token` (otherwise autograd can throw a version
+            # counter error). Work functionally on a cloned last token instead.
             mod_tokens = mod_tokens.clone()
-            content_token = mod_tokens[:, -1, :]
-            style_token   = content_token + (lam * self.style_delta)
+            content_token = mod_tokens[:, -1, :].clone()
+            style_token = content_token + (lam * self.style_delta)
 
             if self.style_fusion_inject == 'add':
-                mod_tokens[:, -1, :] = style_token
+                new_last = style_token
             elif self.style_fusion_inject == 'adain':
-                mod_tokens[:, -1, :] = self._adain_1d(content_token, style_token)
+                new_last = self._adain_1d(content_token, style_token)
             else:
                 # Should be prevented by __init__ validation, but keep safe.
                 return output
-            return (result, mod_tokens.view(mod.shape[0], -1))
+
+            new_tokens = torch.cat(
+                [mod_tokens[:, :-1, :], new_last.unsqueeze(1)],
+                dim=1,
+            )
+            return (result, new_tokens.reshape(mod.shape[0], -1))
 
         self.style_fusion_handles["ba_capture"] = (
             bottleneck_ba.register_forward_hook(capture_style_token_ba)

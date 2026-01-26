@@ -11,6 +11,8 @@ sys.path = [p for p in sys.path if 'UVCGANv2_vHE' not in p or new_repo_root in o
 sys.path.insert(0, new_repo_root)
 print("Using uvcgan2 from:", new_repo_root)
 
+os.environ["WANDB_API_KEY"] = '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'
+
 from uvcgan2               import ROOT_OUTDIR, train
 from uvcgan2.presets       import GEN_PRESETS, BH_PRESETS
 from uvcgan2.utils.parsers import add_preset_name_parser, add_batch_size_parser
@@ -20,9 +22,6 @@ from uvcgan2.data.adjacent_pair_dataset import AdjacentZPairDataset
 from torchvision.transforms.functional import to_pil_image
 
 today_str = date.today().strftime('%Y%m%d')
-# Optional: set your W&B API key here for local runs.
-# Do NOT commit secrets to git.
-os.environ["WANDB_API_KEY"] = ""
 
 def parse_cmdargs():
     parser = argparse.ArgumentParser(
@@ -122,9 +121,23 @@ def parse_cmdargs():
         help='Enable Weights & Biases logging'
     )
     parser.add_argument(
+        '--wandb-api-key',
+        type=str,
+        nargs='?',
+        const='__PROMPT__',
+        default=None,
+        help='W&B API key; pass a value or use `--wandb-api-key` alone to be prompted (prefer WANDB_API_KEY env var or `wandb login`)'
+    )
+    parser.add_argument(
+        '--wandb-api-key-file',
+        type=str,
+        default=None,
+        help='Path to a file containing the W&B API key (recommended over --wandb-api-key)'
+    )
+    parser.add_argument(
         '--wandb-entity',
         type=str,
-        default='sanhong113',
+        default='sanhong113-johns-hopkins-university',
         help='wandb entity/team'
     )
     parser.add_argument(
@@ -328,43 +341,51 @@ if cmdargs.wandb and cmdargs.wandb_mode != 'disabled':
         print(f"[wandb] Disabled (import failed): {e}")
         wandb = None
     else:
-        if not os.environ.get("WANDB_API_KEY"):
+        if cmdargs.wandb_api_key_file:
+            try:
+                with open(cmdargs.wandb_api_key_file, "r", encoding="utf-8") as f:
+                    os.environ["WANDB_API_KEY"] = f.read().strip()
+            except Exception as e:
+                print(f"[wandb] Disabled (failed to read --wandb-api-key-file): {e}")
+                wandb = None
+        if wandb is not None and cmdargs.wandb_api_key == '__PROMPT__':
             if not sys.stdin.isatty():
-                print("[wandb] Disabled (no WANDB_API_KEY in non-interactive session)")
+                print("[wandb] Disabled (--wandb-api-key provided without a value in a non-interactive session)")
                 wandb = None
             else:
                 os.environ["WANDB_API_KEY"] = getpass.getpass("W&B API key: ").strip()
-        if wandb is not None:
-            os.environ['WANDB_MODE'] = cmdargs.wandb_mode
-            try:
-                if os.environ.get("WANDB_API_KEY"):
-                    try:
-                        wandb.login(key=os.environ["WANDB_API_KEY"], relogin=True)
-                    except Exception as e:
-                        print(f"[wandb] Disabled (login failed): {e}")
-                        raise
-                wandb.init(
-                    entity = cmdargs.wandb_entity,
-                    project = wandb_project,
-                    config = {
-                        'data_path_domainA'     : data_path_domainA,
-                        'data_path_domainB'     : data_path_domainB,
-                        'lambda_sub_str'        : lambda_sub_str,
-                        'lambda_emb_str'        : lambda_emb_str,
-                        'lambda_sty_str'        : lambda_sty_str,
-                        'z_spacing'             : cmdargs.z_spacing,
-                        'lambda_sub_loss'       : cmdargs.lambda_sub_loss,
-                        'lambda_embedding_loss' : cmdargs.lambda_embedding_loss,
-                        'lambda_style_fusion'   : cmdargs.lambda_style_fusion,
-                        'style_fusion_inject'   : cmdargs.style_fusion_inject,
-                        'use_embedding_loss'    : cmdargs.use_embedding_loss,
-                        'epochs'                : args_dict['epochs'],
-                        'lr_gen'                : cmdargs.lr_gen,
-                    },
-                )
-            except Exception as e:
-                print(f"[wandb] Disabled (init failed): {e}")
-                wandb = None
+        if wandb is not None and cmdargs.wandb_api_key:
+            os.environ["WANDB_API_KEY"] = cmdargs.wandb_api_key.strip()
+        os.environ['WANDB_MODE'] = cmdargs.wandb_mode
+        try:
+            if os.environ.get("WANDB_API_KEY"):
+                try:
+                    wandb.login(key=os.environ["WANDB_API_KEY"], relogin=True)
+                except Exception as e:
+                    print(f"[wandb] Disabled (login failed): {e}")
+                    raise
+            wandb.init(
+                entity = cmdargs.wandb_entity,
+                project = wandb_project,
+                config = {
+                    'data_path_domainA'     : data_path_domainA,
+                    'data_path_domainB'     : data_path_domainB,
+                    'lambda_sub_str'        : lambda_sub_str,
+                    'lambda_emb_str'        : lambda_emb_str,
+                    'lambda_sty_str'        : lambda_sty_str,
+                    'z_spacing'             : cmdargs.z_spacing,
+                    'lambda_sub_loss'       : cmdargs.lambda_sub_loss,
+                    'lambda_embedding_loss' : cmdargs.lambda_embedding_loss,
+                    'lambda_style_fusion'   : cmdargs.lambda_style_fusion,
+                    'style_fusion_inject'   : cmdargs.style_fusion_inject,
+                    'use_embedding_loss'    : cmdargs.use_embedding_loss,
+                    'epochs'                : args_dict['epochs'],
+                    'lr_gen'                : cmdargs.lr_gen,
+                },
+            )
+        except Exception as e:
+            print(f"[wandb] Disabled (init failed): {e}")
+            wandb = None
 
 
 # ✅ Final call

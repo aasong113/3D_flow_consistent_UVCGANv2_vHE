@@ -3,24 +3,17 @@
 import argparse
 import collections
 import os
-import sys
 
 import tqdm
 import numpy as np
 from PIL import Image
 import torch
 
-_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-_REPO_ROOT = os.path.abspath(os.path.join(_THIS_DIR, os.pardir))
-if _REPO_ROOT not in sys.path:
-    sys.path.insert(0, _REPO_ROOT)
-
 from uvcgan2.consts import MERGE_NONE
 from uvcgan2.eval.funcs import (
-    start_model_eval, tensor_to_image, slice_data_loader, get_eval_savedir,
-    make_image_subdirs
+    load_eval_model_dset_from_cmdargs, tensor_to_image, slice_data_loader,
+    get_eval_savedir, make_image_subdirs
 )
-from uvcgan2.data import construct_data_loaders
 from uvcgan2.utils.parsers import (
     add_standard_eval_parsers, add_plot_extension_parser
 )
@@ -29,94 +22,10 @@ def parse_cmdargs():
     parser = argparse.ArgumentParser(
         description = 'Save model predictions as images'
     )
-    add_standard_eval_parsers(parser, default_epoch = 10)
+    add_standard_eval_parsers(parser)
     add_plot_extension_parser(parser)
 
-    parser.add_argument(
-        '--data-root',
-        '--dataroot',
-        default = None,
-        dest    = 'data_root',
-        help    = (
-            'override dataset root. For CycleGAN-style datasets this should be '
-            'the directory containing trainA/trainB/testA/testB; if a split '
-            'directory (e.g. testA) is provided, its parent is used.'
-        ),
-        type    = str,
-    )
-
     return parser.parse_args()
-
-def _infer_cyclegan_root(path):
-    path = os.path.abspath(os.path.expanduser(path))
-    base = os.path.basename(path).lower()
-
-    split_dirs = {'traina', 'trainb', 'testa', 'testb', 'vala', 'valb'}
-    if base in split_dirs:
-        return os.path.dirname(path)
-
-    return path
-
-def _infer_domain_from_split_dir(path):
-    base = os.path.basename(os.path.abspath(os.path.expanduser(path))).lower()
-    split_prefixes = ('train', 'test', 'val')
-    if not any(base.startswith(p) for p in split_prefixes):
-        return None
-
-    if base.endswith('a'):
-        return 'a'
-    if base.endswith('b'):
-        return 'b'
-
-    return None
-
-def _override_dataset_paths(data_config, data_root):
-    if not data_root:
-        return
-
-    inferred_root = _infer_cyclegan_root(data_root)
-
-    for ds_conf in data_config.datasets:
-        if isinstance(ds_conf.dataset, dict):
-            ds_conf.dataset['path'] = inferred_root
-
-def _restrict_to_domain(data_config, domain):
-    domain = str(domain).lower()
-    kept = []
-    for ds_conf in data_config.datasets:
-        if not isinstance(ds_conf.dataset, dict):
-            kept.append(ds_conf)
-            continue
-
-        ds_domain = str(ds_conf.dataset.get('domain', '')).lower()
-        if ds_domain == domain:
-            kept.append(ds_conf)
-
-    data_config.datasets = kept
-
-def _drop_missing_cyclegan_domains(data_config, split):
-    kept = []
-    for ds_conf in data_config.datasets:
-        if not isinstance(ds_conf.dataset, dict):
-            kept.append(ds_conf)
-            continue
-
-        name = ds_conf.dataset.get('name')
-        if name not in {'cyclegan', 'image-domain-folder'}:
-            kept.append(ds_conf)
-            continue
-
-        root = ds_conf.dataset.get('path')
-        domain = ds_conf.dataset.get('domain', 'a')
-        if root is None:
-            kept.append(ds_conf)
-            continue
-
-        expected = os.path.join(str(root), f"{split}{str(domain).upper()}")
-        if os.path.isdir(expected):
-            kept.append(ds_conf)
-
-    data_config.datasets = kept
 
 def save_images(model, savedir, filenames, ext):
     """Save model outputs using original filenames."""
@@ -192,25 +101,8 @@ def inference_collate_fn(batch):
 def main():
     cmdargs = parse_cmdargs()
 
-    args, model, evaldir = start_model_eval(
-        cmdargs.model,
-        cmdargs.epoch,
-        cmdargs.model_state,
-        merge_type = MERGE_NONE,
-        batch_size = cmdargs.batch_size,
-    )
-
-    _override_dataset_paths(args.config.data, cmdargs.data_root)
-    inferred_domain = (
-        None if not cmdargs.data_root else _infer_domain_from_split_dir(cmdargs.data_root)
-    )
-    if inferred_domain is not None:
-        _restrict_to_domain(args.config.data, inferred_domain)
-    else:
-        _drop_missing_cyclegan_domains(args.config.data, cmdargs.split)
-
-    data_list = construct_data_loaders(
-        args.config.data, args.config.batch_size, split = cmdargs.split
+    args, model, data_list, evaldir = load_eval_model_dset_from_cmdargs(
+        cmdargs, merge_type = MERGE_NONE
     )
 
     # Set inference mode + patch DataLoader(s) with custom collate_fn
@@ -248,6 +140,7 @@ def main():
     savedir = get_eval_savedir(
         evaldir, 'images', cmdargs.model_state, cmdargs.split
     )
+    print(f"Saving translated images to {savedir}")
 
     dump_images(
         model, data_list, cmdargs.n_eval, args.batch_size, savedir,
@@ -256,3 +149,4 @@ def main():
 
 if __name__ == '__main__':
     main() 
+

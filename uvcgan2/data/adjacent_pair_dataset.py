@@ -21,9 +21,11 @@ class AdjacentZPairDataset(Dataset):
                 f"Check filename format and z_spacing={z_spacing}"
             )
     def build_img_dict(self):
-        files = glob.glob(os.path.join(self.root_dir, "*.tif"))
-        print(f"[AdjacentZPairDataset] Found {len(files)} .tif files")
-        pattern = re.compile(r"(.*)_img=(\d+)_P=(\d+)\.tif")
+        files = []
+        for ext in ("*.tif", "*.tiff", "*.png"):
+            files.extend(glob.glob(os.path.join(self.root_dir, ext)))
+        print(f"[AdjacentZPairDataset] Found {len(files)} .tif/.tiff/.png files")
+        pattern = re.compile(r"(.*)_img=(\d+)_P=(\d+)\.(tif|tiff|png)$", re.IGNORECASE)
         img_dict = defaultdict(list)
         for f in files:
             name = os.path.basename(f)

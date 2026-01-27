@@ -94,6 +94,24 @@ def _split_to_cyclegan_dirname(split: str, domain_letter: str) -> str:
     return f"{split.lower()}{domain_letter.upper()}"
 
 
+def _resolve_cyclegan_root_and_split_for_test_a(test_a_path: str, split: str) -> Tuple[str, str]:
+    """
+    Resolve CycleGAN root + effective split for domain A.
+
+    Behavior:
+      - If `test_a_path` is a CycleGAN split dir like ".../trainA" or ".../testA",
+        respect that folder and infer the split from its name (ignoring `split`).
+      - Otherwise, treat `test_a_path` as either the CycleGAN root (containing trainA/testA/...)
+        or a path under it, and use the provided `split`.
+    """
+    test_a_path = os.path.abspath(os.path.expanduser(test_a_path))
+    base = os.path.basename(test_a_path).lower()
+    inferred = {"traina": "train", "testa": "test", "vala": "val"}.get(base)
+    if inferred is not None:
+        return os.path.dirname(test_a_path), inferred
+    return _infer_cyclegan_root(test_a_path), str(split)
+
+
 def _list_image_files(path: str, recursive: bool) -> List[str]:
     """List image files (paths) under `path` with known extensions."""
     path = os.path.abspath(os.path.expanduser(path))
@@ -168,19 +186,24 @@ class EpochMetrics:
     inception_score: float
 
 
-def _discover_epochs_from_checkpoints(checkpoints_dir: str) -> List[int]:
+def _discover_epochs_from_checkpoints(checkpoints_dir: str, use_avg: bool) -> List[int]:
     """
     Find all epochs available in a checkpoints directory.
 
     The training code typically writes files like:
       0010_net_gen_ab.pth, 0010_net_avg_gen_ab.pth, ...
-    We use *_net_gen_ab.pth as the "epoch exists" signal.
+    We use either:
+      - *_net_gen_ab.pth (default)
+      - *_net_avg_gen_ab.pth (when --use-avg is set)
     """
     checkpoints_dir = os.path.abspath(os.path.expanduser(checkpoints_dir))
     if not os.path.isdir(checkpoints_dir):
         raise FileNotFoundError(f"checkpoints dir not found: {checkpoints_dir}")
 
-    epoch_re = re.compile(r"^(?P<epoch>\\d+)_net_gen_ab\\.pth$")
+    if use_avg:
+        epoch_re = re.compile(r"^(?P<epoch>\d+)_net_avg_gen_ab\.pth$")
+    else:
+        epoch_re = re.compile(r"^(?P<epoch>\d+)_net_gen_ab\.pth$")
     epochs: List[int] = []
     for fname in os.listdir(checkpoints_dir):
         m = epoch_re.match(fname)
@@ -233,6 +256,7 @@ def _configure_testA_only_dataloader(
     z_spacing: int,
     split: str,
     batch_size: int,
+    num_workers: int,
 ) -> torch.utils.data.DataLoader:
     """
     Override the model's training data config so we can run inference on a user-provided testA folder.
@@ -249,7 +273,8 @@ def _configure_testA_only_dataloader(
     shape = tuple(ref.shape) if isinstance(ref.shape, (list, tuple)) else ref.shape
 
     if dataset_name == "cyclegan":
-        cyclegan_root = _infer_cyclegan_root(test_a_path)
+        cyclegan_root, effective_split = _resolve_cyclegan_root_and_split_for_test_a(test_a_path, split)
+        split = effective_split
         dataset_args = {"name": "cyclegan", "domain": "A", "path": cyclegan_root}
     elif dataset_name == "adjacent-z-pairs":
         dataset_args = {
@@ -309,14 +334,76 @@ def _configure_testA_only_dataloader(
         raise TypeError(f"Unsupported batch item type: {type(first)}")
 
     # Wrap the dataset in a DataLoader with our custom collate_fn.
-    # We keep num_workers from the original loader for performance.
+    # Default to num_workers=0 for portability (some environments disallow multiprocessing semaphores).
     return torch.utils.data.DataLoader(
         loader.dataset,
         batch_size=args.config.batch_size,
         shuffle=False,
-        num_workers=getattr(loader, "num_workers", 0),
+        num_workers=int(num_workers),
         collate_fn=inference_collate_fn,
     )
+
+
+def _is_finite_number(x: float) -> bool:
+    try:
+        return math.isfinite(float(x))
+    except Exception:  # pylint: disable=broad-except
+        return False
+
+
+def _metric_is_better(metric: str, value: float, best_value: Optional[float]) -> bool:
+    if best_value is None:
+        return True
+    if metric in {"fid", "kid"}:
+        return value < best_value
+    if metric in {"is"}:
+        return value > best_value
+    raise ValueError(f"Unknown metric: {metric}")
+
+
+def _safe_rmtree(path: str) -> None:
+    if os.path.exists(path):
+        shutil.rmtree(path, ignore_errors=True)
+
+
+def _safe_move_dir(src_dir: str, dst_dir: str) -> None:
+    """
+    Move a directory, falling back to copy+delete if needed (e.g. across filesystems).
+    """
+    _safe_rmtree(dst_dir)
+    os.makedirs(os.path.dirname(dst_dir), exist_ok=True)
+    try:
+        shutil.move(src_dir, dst_dir)
+    except Exception:  # pylint: disable=broad-except
+        shutil.copytree(src_dir, dst_dir)
+        _safe_rmtree(src_dir)
+
+
+def _update_best_pointer(best_root: str, metric: str, epoch: int) -> None:
+    """
+    Create/replace a symlink best_<metric> -> epoch_####.
+    If symlinks aren't supported, write a small text file instead.
+    """
+    os.makedirs(best_root, exist_ok=True)
+    target_dir = os.path.join(best_root, f"epoch_{epoch:04d}")
+    link_path = os.path.join(best_root, f"best_{metric}")
+    txt_path = os.path.join(best_root, f"best_{metric}.txt")
+
+    # Remove previous link/file if present.
+    for p in (link_path, txt_path):
+        if os.path.islink(p) or os.path.isfile(p):
+            with contextlib.suppress(Exception):
+                os.remove(p)
+        elif os.path.isdir(p):
+            _safe_rmtree(p)
+
+    try:
+        rel = os.path.relpath(target_dir, best_root)
+        os.symlink(rel, link_path)
+    except Exception:  # pylint: disable=broad-except
+        with open(txt_path, "wt", encoding="utf-8") as f:
+            f.write(f"epoch: {epoch}\n")
+            f.write(f"path: {target_dir}\n")
 
 
 def _save_tensor_as_png(tensor_chw_float01: torch.Tensor, out_path: str) -> None:
@@ -389,15 +476,12 @@ def _compute_pairwise_metrics(
     real_b_dir: str,
     allow_missing_metrics: bool,
     resize_to_real: bool,
+    allow_unpaired: bool,
 ) -> Tuple[int, float, float, float]:
     """
     Compute PSNR, SSIM, and LPIPS on paired images matched by basename.
     Returns: (num_pairs, mean_psnr, mean_ssim, mean_lpips)
     """
-    # Local import so the script can still run when only plotting/resuming.
-    from skimage.metrics import peak_signal_noise_ratio as _psnr
-    from skimage.metrics import structural_similarity as _ssim
-
     fake_paths = _list_image_files(fake_b_dir, recursive=False)
     real_paths = _list_image_files(real_b_dir, recursive=False)
     fake_map = _build_basename_to_path_map(fake_paths)
@@ -405,10 +489,31 @@ def _compute_pairwise_metrics(
 
     common = sorted(set(fake_map).intersection(real_map))
     if not common:
+        if allow_unpaired:
+            print(
+                "[WARN] No paired images found between fake_b and real_b; "
+                "paired metrics (PSNR/SSIM/LPIPS) will be NaN."
+            )
+            return 0, float("nan"), float("nan"), float("nan")
         raise RuntimeError(
             "No paired images found between fake_b and real_b. "
-            "Ensure filenames match between testA and realB."
+            "Ensure filenames match between testA and realB, or re-run with --allow-unpaired."
         )
+
+    # Local imports so the script can still run when only plotting/resuming.
+    have_skimage = True
+    try:
+        from skimage.metrics import peak_signal_noise_ratio as _psnr  # type: ignore
+        from skimage.metrics import structural_similarity as _ssim  # type: ignore
+    except Exception:  # pylint: disable=broad-except
+        have_skimage = False
+        if allow_missing_metrics:
+            print("[WARN] scikit-image not installed; PSNR/SSIM will be NaN.")
+        else:
+            raise RuntimeError(
+                "Missing dependency: scikit-image (skimage). Install it (e.g. `pip install scikit-image`) "
+                "or re-run with --allow-missing-metrics."
+            )
 
     # LPIPS is optional (it requires the external lpips package).
     lpips_mod = _try_import("lpips")
@@ -433,21 +538,26 @@ def _compute_pairwise_metrics(
         fake_img = _load_image_float_rgb(fake_map[base])
         real_img = _load_image_float_rgb(real_map[base])
 
-        # PSNR/SSIM require images to have the same shape.
+        # These metrics require images to have the same shape.
         if fake_img.shape != real_img.shape:
-            if not resize_to_real:
+            if not resize_to_real and (have_skimage or lpips_model is not None):
                 raise RuntimeError(
                     f"Shape mismatch for '{base}': fake {fake_img.shape} vs real {real_img.shape}. "
                     "Re-run with --resize-to-real to resize fake->real for metrics."
                 )
 
-            # Resize fake -> real resolution (keeps code simple; may slightly change metrics).
-            pil = Image.fromarray((fake_img * 255).astype(np.uint8))
-            pil = pil.resize((real_img.shape[1], real_img.shape[0]), resample=Image.BICUBIC)
-            fake_img = _dtype_to_float01(np.asarray(pil.convert("RGB")))
+            if resize_to_real:
+                # Resize fake -> real resolution (keeps code simple; may slightly change metrics).
+                pil = Image.fromarray((fake_img * 255).astype(np.uint8))
+                pil = pil.resize((real_img.shape[1], real_img.shape[0]), resample=Image.BICUBIC)
+                fake_img = _dtype_to_float01(np.asarray(pil.convert("RGB")))
 
-        psnr_vals.append(float(_psnr(real_img, fake_img, data_range=1.0)))
-        ssim_vals.append(float(_ssim(real_img, fake_img, channel_axis=-1, data_range=1.0)))
+        if have_skimage:
+            psnr_vals.append(float(_psnr(real_img, fake_img, data_range=1.0)))
+            ssim_vals.append(float(_ssim(real_img, fake_img, channel_axis=-1, data_range=1.0)))
+        else:
+            psnr_vals.append(float("nan"))
+            ssim_vals.append(float("nan"))
 
         if lpips_model is None:
             lpips_vals.append(float("nan"))
@@ -488,6 +598,27 @@ def _write_png_subset_dir(
         _save_float_rgb_as_png(img, os.path.join(out_dir, f"{base}.png"))
 
 
+def _write_png_dir_from_paths(
+    image_paths: Sequence[str],
+    out_dir: str,
+    limit: Optional[int],
+) -> int:
+    """
+    Convert images to RGB PNGs with sequential names.
+    Returns number of images written.
+    """
+    os.makedirs(out_dir, exist_ok=True)
+    if limit is None:
+        chosen = list(image_paths)
+    else:
+        chosen = list(image_paths)[: int(limit)]
+
+    for idx, src_path in enumerate(chosen):
+        img = _load_image_float_rgb(src_path)
+        _save_float_rgb_as_png(img, os.path.join(out_dir, f"{idx:06d}.png"))
+    return len(chosen)
+
+
 def _compute_distribution_metrics(
     fake_b_dir: str,
     real_b_dir: str,
@@ -521,27 +652,25 @@ def _compute_distribution_metrics(
             "Or re-run with --allow-missing-metrics."
         )
 
-    # Match by basename so both directories contain the same set of images.
     fake_paths = _list_image_files(fake_b_dir, recursive=False)
     real_paths = _list_image_files(real_b_dir, recursive=False)
-    fake_map = _build_basename_to_path_map(fake_paths)
-    real_map = _build_basename_to_path_map(real_paths)
-    common = sorted(set(fake_map).intersection(real_map))
-    if not common:
-        raise RuntimeError("No paired images available to compute distribution metrics.")
+    if not fake_paths or not real_paths:
+        raise RuntimeError("No images available to compute distribution metrics.")
 
     with tempfile.TemporaryDirectory(prefix="uvcgan_metrics_") as tmp_root:
         tmp_fake = os.path.join(tmp_root, "fake")
         tmp_real = os.path.join(tmp_root, "real")
 
-        # Write RGB PNG subsets so external metric libraries can read them reliably.
-        _write_png_subset_dir(fake_b_dir, common, tmp_fake)
-        _write_png_subset_dir(real_b_dir, common, tmp_real)
+        # Write RGB PNGs so external metric libraries can read them reliably.
+        # Keep counts balanced for stability and to bound runtime.
+        keep_n = min(len(fake_paths), len(real_paths))
+        _write_png_dir_from_paths(fake_paths, tmp_fake, limit=keep_n)
+        _write_png_dir_from_paths(real_paths, tmp_real, limit=keep_n)
 
         # torch_fidelity computes all three metrics in one call (if installed).
         if _tf_calculate_metrics is not None:
             # kid_subset_size must not exceed number of images.
-            kid_subset_size = min(len(common), 1000)
+            kid_subset_size = min(keep_n, 1000)
             metrics = _tf_calculate_metrics(
                 input1=tmp_real,
                 input2=tmp_fake,
@@ -698,13 +827,22 @@ def parse_args() -> argparse.Namespace:
         "--split",
         default="test",
         choices=["train", "test", "val"],
-        help="Split name (used when test-a is a CycleGAN root).",
+        help=(
+            "Split name (used when --test-a is a CycleGAN root). "
+            "If --test-a points directly to a split folder (e.g. .../trainA), split is inferred."
+        ),
         type=str,
     )
     parser.add_argument(
         "--batch-size",
         default=1,
         help="Batch size for inference.",
+        type=int,
+    )
+    parser.add_argument(
+        "--num-workers",
+        default=0,
+        help="DataLoader workers (default: 0).",
         type=int,
     )
     parser.add_argument(
@@ -734,6 +872,18 @@ def parse_args() -> argparse.Namespace:
         help="If set, missing metric dependencies produce NaN instead of failing.",
     )
     parser.add_argument(
+        "--allow-unpaired",
+        action="store_true",
+        default=False,
+        help="Allow unpaired testA/realB (paired metrics become NaN; distribution metrics still run). Default: allowed.",
+    )
+    parser.add_argument(
+        "--require-paired",
+        action="store_true",
+        default=False,
+        help="Require paired testA/realB basenames (fail if no pairs found).",
+    )
+    parser.add_argument(
         "--resize-to-real",
         action="store_true",
         default=False,
@@ -744,6 +894,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         default=False,
         help="If set, skip epochs already present in the output .txt file.",
+    )
+    parser.add_argument(
+        "--use-avg",
+        action="store_true",
+        default=False,
+        help="Use avg_gen_ab checkpoints/weights for inference (EMA). Default: use non-avg gen_ab.",
+    )
+    parser.add_argument(
+        "--no-keep-best",
+        action="store_true",
+        default=False,
+        help="Disable keeping translated images for the best FID/KID/IS epochs.",
     )
     parser.add_argument(
         "--sample-basename",
@@ -760,9 +922,13 @@ def main() -> None:
     checkpoints_dir = os.path.abspath(os.path.expanduser(cmd.checkpoints_dir))
     model_dir = os.path.dirname(checkpoints_dir.rstrip(os.sep))
 
-    available_epochs = _discover_epochs_from_checkpoints(checkpoints_dir)
+    available_epochs = _discover_epochs_from_checkpoints(checkpoints_dir, use_avg=cmd.use_avg)
     if not available_epochs:
-        raise RuntimeError(f"No epochs found in checkpoints dir: {checkpoints_dir}")
+        hint = "avg" if cmd.use_avg else "non-avg"
+        extra = ""
+        if not cmd.use_avg:
+            extra = " (If you only have *_net_avg_gen_ab.pth files, re-run with --use-avg.)"
+        raise RuntimeError(f"No {hint} epochs found in checkpoints dir: {checkpoints_dir}{extra}")
 
     epochs = _parse_epochs_arg(cmd.epochs, available_epochs)
     if not epochs:
@@ -779,6 +945,12 @@ def main() -> None:
     plot_path = os.path.join(output_dir, "metrics_by_epoch.png")
     samples_dir = os.path.join(output_dir, "samples_fake_b")
     os.makedirs(samples_dir, exist_ok=True)
+
+    keep_best = not bool(cmd.no_keep_best)
+    best_root = os.path.join(output_dir, "best_epochs")
+    if keep_best:
+        os.makedirs(best_root, exist_ok=True)
+        print(f"[INFO] Keeping translated fake_b images for best epochs under: {best_root}")
 
     # Optionally resume by skipping epochs already recorded.
     done_epochs = _read_existing_epochs_from_txt(metrics_txt) if cmd.resume else set()
@@ -798,10 +970,16 @@ def main() -> None:
     if not os.path.isdir(real_b_dir):
         raise FileNotFoundError(f"--real-b not found: {real_b_dir}")
 
-    # Choose a consistent sample image to save for each epoch.
+    # Resolve where testA images actually come from (and what split is used).
+    effective_split = cmd.split
     if cmd.dataset_name == "cyclegan":
-        root = _infer_cyclegan_root(test_a_path)
-        test_a_images_dir = os.path.join(root, _split_to_cyclegan_dirname(cmd.split, "A"))
+        root, effective_split = _resolve_cyclegan_root_and_split_for_test_a(test_a_path, cmd.split)
+        if effective_split != cmd.split:
+            print(
+                f"[INFO] --test-a points to '{os.path.basename(test_a_path)}'; "
+                f"overriding --split={cmd.split} -> {effective_split}"
+            )
+        test_a_images_dir = os.path.join(root, _split_to_cyclegan_dirname(effective_split, "A"))
     else:
         test_a_images_dir = test_a_path
 
@@ -813,18 +991,10 @@ def main() -> None:
         raise RuntimeError(f"No images found in realB directory: {real_b_dir}")
 
     test_a_bases = [_strip_known_image_suffixes(os.path.basename(p)) for p in test_a_files]
-    real_b_bases = {_strip_known_image_suffixes(os.path.basename(p)) for p in real_b_files}
-    common_bases = [b for b in test_a_bases if b in real_b_bases]
-    if not common_bases:
+    sample_base = cmd.sample_basename or test_a_bases[0]
+    if sample_base not in set(test_a_bases):
         raise RuntimeError(
-            "No common basenames between testA and realB. "
-            "Ensure filenames match so paired metrics can be computed."
-        )
-
-    sample_base = cmd.sample_basename or common_bases[0]
-    if sample_base not in set(common_bases):
-        raise RuntimeError(
-            f"--sample-basename '{sample_base}' not found in common basenames between testA and realB."
+            f"--sample-basename '{sample_base}' not found in testA filenames."
         )
 
     # Load model config once and reuse it; we only swap checkpoints by epoch.
@@ -835,6 +1005,10 @@ def main() -> None:
     # Construct model once; we will call model.load(epoch) for each epoch.
     model = construct_model(args.savedir, args.config, is_train=False, device=device)
     model.eval()
+    if not cmd.use_avg and hasattr(model, "avg_momentum"):
+        # Many UVCGAN2 variants use avg_gen_ab when avg_momentum is not None.
+        # For this script we default to non-average inference unless --use-avg is set.
+        model.avg_momentum = None
 
     # Create dataloader once (A-only). This keeps IO + transforms consistent across epochs.
     loader = _configure_testA_only_dataloader(
@@ -842,8 +1016,9 @@ def main() -> None:
         test_a_path=test_a_path,
         dataset_name=cmd.dataset_name,
         z_spacing=cmd.z_spacing,
-        split=cmd.split,
+        split=effective_split,
         batch_size=cmd.batch_size,
+        num_workers=cmd.num_workers,
     )
 
     # Save a small "run header" for traceability.
@@ -855,7 +1030,8 @@ def main() -> None:
         f.write(f"test_a: {test_a_path}\n")
         f.write(f"real_b: {real_b_dir}\n")
         f.write(f"dataset_name: {cmd.dataset_name}\n")
-        f.write(f"split: {cmd.split}\n")
+        f.write(f"split_requested: {cmd.split}\n")
+        f.write(f"split_used: {effective_split}\n")
         f.write(f"batch_size: {cmd.batch_size}\n")
         f.write(f"n_eval: {cmd.n_eval}\n")
         f.write(f"sample_basename: {sample_base}\n")
@@ -865,6 +1041,10 @@ def main() -> None:
     print(f"[INFO] Sample basename (constant across epochs): {sample_base}")
 
     # Main evaluation loop: translate -> metrics -> save -> cleanup.
+    best_epoch_for: Dict[str, Optional[int]] = {"fid": None, "kid": None, "is": None}
+    best_value_for: Dict[str, Optional[float]] = {"fid": None, "kid": None, "is": None}
+    best_metrics_by_epoch: Dict[int, set] = {}
+
     for idx, epoch in enumerate(epochs, start=1):
         print(f"\n[INFO] Evaluating epoch {epoch} ({idx}/{len(epochs)})")
 
@@ -897,11 +1077,14 @@ def main() -> None:
         shutil.copyfile(sample_src, sample_dst)
 
         # 3) Compute metrics.
+        allow_unpaired = cmd.allow_unpaired or (not cmd.require_paired)
+
         num_pairs, psnr_val, ssim_val, lpips_val = _compute_pairwise_metrics(
             fake_b_dir=fake_b_dir,
             real_b_dir=real_b_dir,
             allow_missing_metrics=cmd.allow_missing_metrics,
             resize_to_real=cmd.resize_to_real,
+            allow_unpaired=allow_unpaired,
         )
         fid_val, kid_val, is_val = _compute_distribution_metrics(
             fake_b_dir=fake_b_dir,
@@ -921,14 +1104,58 @@ def main() -> None:
         )
         _append_metrics_row_txt(metrics_txt, row)
 
-        # 4) Cleanup: delete fake_b images to save space.
+        # 4) Optionally keep fake_b images for best epochs (FID/KID/IS).
+        if keep_best:
+            improved: List[Tuple[str, float]] = []
+            for metric, val in (("fid", fid_val), ("kid", kid_val), ("is", is_val)):
+                if not _is_finite_number(val):
+                    continue
+                if _metric_is_better(metric, float(val), best_value_for[metric]):
+                    improved.append((metric, float(val)))
+
+            if improved:
+                # Ensure epoch dir exists by moving fake_b out of the tmp dir.
+                epoch_kept_dir = os.path.join(best_root, f"epoch_{epoch:04d}")
+                epoch_kept_fake_b = os.path.join(epoch_kept_dir, "fake_b")
+                _safe_move_dir(fake_b_dir, epoch_kept_fake_b)
+
+                # Update pointers and prune old best epochs no longer needed.
+                for metric, val in improved:
+                    old_epoch = best_epoch_for[metric]
+                    if old_epoch is not None:
+                        old_set = best_metrics_by_epoch.get(old_epoch, set())
+                        old_set.discard(metric)
+                        best_metrics_by_epoch[old_epoch] = old_set
+                        if not old_set:
+                            _safe_rmtree(os.path.join(best_root, f"epoch_{old_epoch:04d}"))
+
+                    best_epoch_for[metric] = epoch
+                    best_value_for[metric] = val
+                    best_metrics_by_epoch.setdefault(epoch, set()).add(metric)
+                    _update_best_pointer(best_root, metric, epoch)
+
+        # 5) Cleanup: delete per-epoch scratch dir to save space.
         shutil.rmtree(epoch_work_dir, ignore_errors=True)
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-    # 5) Plot all metrics after finishing.
+    # 6) Plot all metrics after finishing.
     _plot_metrics(_load_metrics_table_txt(metrics_txt), plot_path)
     print(f"\n[INFO] Done. Plot saved to: {plot_path}")
+    if keep_best:
+        fid_best = best_epoch_for.get("fid")
+        kid_best = best_epoch_for.get("kid")
+        is_best = best_epoch_for.get("is")
+        if fid_best is None and kid_best is None and is_best is None:
+            print("[WARN] No finite FID/KID/IS found; nothing was kept in best_epochs.")
+        else:
+            print("[INFO] Best epochs kept:")
+            if fid_best is not None:
+                print(f"  FID best: epoch {fid_best} (lower is better)")
+            if kid_best is not None:
+                print(f"  KID best: epoch {kid_best} (lower is better)")
+            if is_best is not None:
+                print(f"  IS  best: epoch {is_best} (higher is better)")
 
 
 if __name__ == "__main__":

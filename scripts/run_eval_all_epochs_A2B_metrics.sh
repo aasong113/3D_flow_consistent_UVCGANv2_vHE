@@ -15,7 +15,7 @@ set -euo pipefail
 #     --resume
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PY_SCRIPT="${SCRIPT_DIR}/eval_all_epochs_A2B_metrics.py"
+PY_SCRIPT="/home/durrlab/Desktop/Anthony/UGVSM/3D_flow_consistent_UVCGANv2_vHE/scripts/eval_all_epochs_A2B_metrics.py"
 
 # Default to the checkpoints path you referenced in your prompt; override with --checkpoints-dir.
 DEFAULT_CHECKPOINTS_DIR="/home/durrlab/Desktop/Anthony/UGVSM/UVCGANv2_vHE/outdir/20251225_Inverted_combined_BIT2HE_duodenum_crypts/20251225_Inverted_combined_BIT2HE_duodenum_crypts_train/model_m(uvcgan2)_d(basic)_g(vit-modnet)_uvcgan2-bn_False-10.0-0.01-5e-05/checkpoints"

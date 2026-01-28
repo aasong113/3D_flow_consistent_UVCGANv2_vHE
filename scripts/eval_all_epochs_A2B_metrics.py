@@ -672,8 +672,11 @@ def _compute_distribution_metrics(
             # kid_subset_size must not exceed number of images.
             kid_subset_size = min(keep_n, 1000)
             metrics = _tf_calculate_metrics(
-                input1=tmp_real,
-                input2=tmp_fake,
+                # NOTE: torch-fidelity computes Inception Score (IS) for input1.
+                # We want IS for the generated images, so we pass fake as input1.
+                # (FID/KID are symmetric, so swapping inputs does not change them.)
+                input1=tmp_fake,
+                input2=tmp_real,
                 cuda=torch.cuda.is_available(),
                 isc=True,
                 fid=True,

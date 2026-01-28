@@ -102,18 +102,31 @@ def parse_cmdargs():
     )
 
     parser.add_argument(
-        '--use-embedding-loss',
-        dest='use_embedding_loss',
+        '--use-style-fusion',
+        dest='use_style_fusion',
         action='store_true',
-        help='Enable embedding loss (uses --lambda-embedding-loss weight)'
+        help='Enable style fusion (uses --lambda-style-fusion weight)'
+    )
+    parser.add_argument(
+        '--no-style-fusion',
+        dest='use_style_fusion',
+        action='store_false',
+        help='Disable style fusion regardless of weight'
+    )
+    # Backwards compatible aliases (misnamed historically).
+    parser.add_argument(
+        '--use-embedding-loss',
+        dest='use_style_fusion',
+        action='store_true',
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         '--no-embedding-loss',
-        dest='use_embedding_loss',
+        dest='use_style_fusion',
         action='store_false',
-        help='Disable embedding loss regardless of weight'
+        help=argparse.SUPPRESS,
     )
-    parser.set_defaults(use_embedding_loss=True)
+    parser.set_defaults(use_style_fusion=True)
 
     parser.add_argument(
         '--wandb',
@@ -187,7 +200,7 @@ def get_transfer_preset(cmdargs):
     }
 
 cmdargs   = parse_cmdargs()
-if not cmdargs.use_embedding_loss:
+if not cmdargs.use_style_fusion:
     cmdargs.lambda_style_fusion = 0.0
 # /home/durrlab-asong/Anthony/subset_training_data_crypts
 data_path_domainA = os.path.join(cmdargs.root_data_path, 'BIT', 'trainA')
@@ -378,7 +391,7 @@ if cmdargs.wandb and cmdargs.wandb_mode != 'disabled':
                     'lambda_embedding_loss' : cmdargs.lambda_embedding_loss,
                     'lambda_style_fusion'   : cmdargs.lambda_style_fusion,
                     'style_fusion_inject'   : cmdargs.style_fusion_inject,
-                    'use_embedding_loss'    : cmdargs.use_embedding_loss,
+                    'use_style_fusion'      : cmdargs.use_style_fusion,
                     'epochs'                : args_dict['epochs'],
                     'lr_gen'                : cmdargs.lr_gen,
                 },

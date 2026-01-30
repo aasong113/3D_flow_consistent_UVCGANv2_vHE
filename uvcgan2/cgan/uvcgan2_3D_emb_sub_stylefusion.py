@@ -184,6 +184,12 @@ class UVCGAN2_3D_stylefusion(ModelBase):
         # but we only want the average to reflect true B-domain inputs (real_b)
         # from the B->A forward direction.
         self.style_ba_update_enabled = False
+        # Tracks whether the A->B ViT bottleneck actually performed a style-token
+        # modification on the *current* forward pass. We use this to trigger
+        # debug image dumps *after* the generator finishes (see forward_dispatch('ab')),
+        # because inside the bottleneck hook we do not yet have access to the final
+        # generated image tensor `fake_b`.
+        self._style_fusion_injected_this_forward = False
 
         bottleneck_ba = self._get_vit_bottleneck(models['gen_ba'])
         bottleneck_ab = self._get_vit_bottleneck(models['gen_ab'])
@@ -296,6 +302,11 @@ class UVCGAN2_3D_stylefusion(ModelBase):
             else:
                 # Should be prevented by __init__ validation, but keep safe.
                 return output
+
+            # Mark that this forward pass actually applied style fusion.
+            # We will use this signal later (after gen_ab finishes) to save
+            # debug images of the input/output slices at a fixed cadence.
+            self._style_fusion_injected_this_forward = True
 
             new_tokens = torch.cat(
                 [mod_tokens[:, :-1, :], new_last.unsqueeze(1)],
@@ -741,12 +752,83 @@ class UVCGAN2_3D_stylefusion(ModelBase):
             #   - During inference, `style_token_ba` is loaded from checkpoint,
             #     so A->B can use the same fixed style without needing paired B.
             self.style_fusion_enabled = self.style_token_ba is not None
+            # Reset per-forward flag; the ViT bottleneck hook will flip this to
+            # True only if it actually applied a style-token modification.
+            self._style_fusion_injected_this_forward = False
+
             (
                 self.images.fake_b, self.images.reco_a,
                 self.images.consist_fake_b
             ) = self.cycle_forward_image(
                 self.images.real_a, self.models.gen_ab, self.models.gen_ba
             )
+
+            # Save style-fusion debug images (every 100 training steps) *after*
+            # the full A->B generator forward completes.
+            #
+            # Why here (and not inside inject_style_token()):
+            #   - The bottleneck hook only sees intermediate features/tokens.
+            #   - We want to save the final generated images (fake_b), which are
+            #     only available after gen_ab returns.
+            #
+            # What we save:
+            #   - realA_z        : `real_a` (z slice)
+            #   - realA_z_adj    : `real_a_adj` (z+1 slice), if present
+            #   - fakeB_z        : `fake_b` generated from realA_z
+            #   - fakeB_z_adj    : gen_ab(realA_z_adj), generated on-demand for debugging
+            if (
+                self.is_train
+                and self.debug_root is not None
+                and (self.current_step % 100 == 0)
+                and self._style_fusion_injected_this_forward
+            ):
+                os.makedirs(self.debug_root, exist_ok=True)
+
+                def _safe_name(name):
+                    # Make filenames robust to characters like '/' or '=' that can
+                    # appear in dataset-provided image IDs.
+                    return str(name).replace(os.sep, "_").replace("/", "_").replace("\\", "_").replace("=", "-")
+
+                step = int(self.current_step)
+                # Always include the global training step in filenames to avoid
+                # overwriting when the same patch appears multiple times.
+                step_tag = f"step{step:06d}"
+                z_name = (
+                    _safe_name(self.images.real_a_names[0])
+                    if hasattr(self.images, "real_a_names") and self.images.real_a_names
+                    else "realA"
+                )
+                z_adj_name = (
+                    _safe_name(self.images.real_a_adj_names[0])
+                    if hasattr(self.images, "real_a_adj_names") and self.images.real_a_adj_names
+                    else None
+                )
+
+                # Save z slice input/output (always available).
+                save_image(
+                    self.images.real_a[0],
+                    os.path.join(self.debug_root, f"stylefusion_{step_tag}_{z_name}_realA_z.png"),
+                )
+                save_image(
+                    self.images.fake_b[0],
+                    os.path.join(self.debug_root, f"stylefusion_{step_tag}_{z_name}_fakeB_z.png"),
+                )
+
+                # Save z+1 slice input/output if the dataset provides it (adjacent-z mode).
+                if hasattr(self.images, "real_a_adj") and self.images.real_a_adj is not None:
+                    tag = z_adj_name or f"{z_name}_adj"
+                    save_image(
+                        self.images.real_a_adj[0],
+                        os.path.join(self.debug_root, f"stylefusion_{step_tag}_{tag}_realA_z_adj.png"),
+                    )
+                    # Run A->B on the adjacent slice to visualize the z+1 output.
+                    # This forward is in no_grad() so it does not affect training.
+                    with torch.no_grad():
+                        fake_b_adj = self.models.gen_ab(self.images.real_a_adj)
+                    save_image(
+                        fake_b_adj[0],
+                        os.path.join(self.debug_root, f"stylefusion_{step_tag}_{tag}_fakeB_z_adj.png"),
+                    )
 
         elif direction == 'ba':
             # Do NOT inject style into gen_ab when it is used as the backward

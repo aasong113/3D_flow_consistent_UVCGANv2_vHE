@@ -28,6 +28,7 @@ from uvcgan2.models.generator        import construct_generator
 from .model_base import ModelBase
 from .named_dict import NamedDict
 from .funcs import set_two_domain_input, save_image, save_embedding_as_image
+from .checkpoint import get_save_path
 
 def construct_consistency_model(consist, device):
     name, kwargs = extract_name_kwargs(consist)
@@ -52,6 +53,9 @@ def queued_forward(batch_head_model, input_image, queue, update_queue = True):
 
 class UVCGAN2_3D_stylefusion(ModelBase):
     # pylint: disable=too-many-instance-attributes
+    # Filename stem used to persist the running-average style token in the same
+    # checkpoint directory as the model weights/optimizers.
+    STYLE_FUSION_STATE_NAME = "style_fusion_state"
 
     def _setup_images(self, _config):
         images = [
@@ -153,22 +157,33 @@ class UVCGAN2_3D_stylefusion(ModelBase):
         )
 
     def _setup_style_fusion(self, models):
-        # --- Style fusion state (cached per step/batch) ---
+        # --- Style fusion state (running-average B->A style token) ---
         #
         # We treat the ViT bottleneck's *last* "extra token" as a compact
         # per-image style code (see ExtendedPixelwiseViT.forward()).
         #
-        # During an A->B translation pass, we:
-        #   1) "Prime" by running B->A on real_b to cache a B-domain style token.
-        #   2) Run A->B on real_a, and at the ViT bottleneck, replace the last
-        #      extra token using AdaIN(content_token_ab, style_token_ba).
+        # Requested behavior:
+        #   - Maintain `style_token_ba` as a *running average* over all B->A
+        #     style tokens seen during training (across batches and epochs).
+        #   - Save this running-average style token at each checkpoint epoch.
+        #   - Load it back at inference time together with model weights, so
+        #     A->B can use a fixed, learned-average B-style even without `real_b`.
         #
-        # This replaces the previous behavior that used an A/B *delta* token.
-        self.style_token_ba = None  # cached style token from B->A generator (domain B reference)
+        # Shape convention:
+        #   - running average: (1, feat_dim)
+        #   - per-batch tokens: (N, feat_dim) (never stored long-term)
+        self.style_token_ba = None  # running-average B->A style token, shape (1, feat_dim)
         self.style_token_ab = None  # cached style token from A->B generator (domain A content; mostly for debugging)
         self.style_delta = None      # deprecated: kept for backwards compatibility; no longer used
+        self.style_token_ba_count = 0  # number of samples accumulated into the running mean
         self.style_fusion_enabled = False
         self.style_fusion_handles = {}
+        # Gate to control *when* the B->A running average is updated.
+        #
+        # Important: gen_ba is used in multiple places (cycle reconstruction, idt),
+        # but we only want the average to reflect true B-domain inputs (real_b)
+        # from the B->A forward direction.
+        self.style_ba_update_enabled = False
 
         bottleneck_ba = self._get_vit_bottleneck(models['gen_ba'])
         bottleneck_ab = self._get_vit_bottleneck(models['gen_ab'])
@@ -186,7 +201,39 @@ class UVCGAN2_3D_stylefusion(ModelBase):
             # as the "style token" we want to inject into A->B.
             mod_flat = output[1]
             mod_tokens = mod_flat.view(mod_flat.shape[0], n_ext, feat_dim)
-            self.style_token_ba = mod_tokens[:, -1, :].detach()
+
+            # Per-sample style tokens from this forward (N, feat_dim).
+            batch_style = mod_tokens[:, -1, :].detach()
+
+            # During inference/eval we want to keep the checkpointed average fixed.
+            #
+            # During training, we also only update when explicitly enabled
+            # (see `forward_dispatch('ba')`). This prevents contaminating the
+            # average with tokens produced from:
+            #   - reconstructions (gen_ba(fake_b)) in the A->B cycle,
+            #   - identity passes (gen_ba(real_a)) if lambda_idt > 0.
+            if (not self.is_train) or (not getattr(self, "style_ba_update_enabled", False)):
+                return
+
+            # Streaming mean update over *samples* (not batches).
+            #
+            # We aggregate a global average across all B->A forwards:
+            #   mean_new = (mean_old * count_old + sum(batch_style)) / (count_old + N)
+            #
+            # This implements the true average style token over training.
+            batch_count = int(batch_style.shape[0])
+            batch_sum = batch_style.sum(dim=0, keepdim=True)  # (1, feat_dim)
+
+            if self.style_token_ba is None or self.style_token_ba_count <= 0:
+                self.style_token_ba = batch_sum / float(batch_count)
+                self.style_token_ba_count = batch_count
+                return
+
+            total = self.style_token_ba_count + batch_count
+            self.style_token_ba = (
+                (self.style_token_ba * float(self.style_token_ba_count)) + batch_sum
+            ) / float(total)
+            self.style_token_ba_count = total
 
         def capture_style_token_ab(_module, _inputs, output):
             # Capture the A->B style/content token for inspection/debugging.
@@ -202,7 +249,7 @@ class UVCGAN2_3D_stylefusion(ModelBase):
             #
             # New behavior (requested):
             #   - content token  = A->B token from the *current* forward pass
-            #   - style token    = cached B->A token computed from real_b
+            #   - style token    = running-average B->A token accumulated during training
             #   - injection      = AdaIN(content, style) (or simple replacement)
             #
             # We keep `lam` as a continuous knob (cosine-decayed over epochs):
@@ -213,11 +260,6 @@ class UVCGAN2_3D_stylefusion(ModelBase):
 
             result, mod_flat = output
             mod_tokens = mod_flat.view(mod_flat.shape[0], n_ext, feat_dim)
-
-            # Batch-size mismatch can happen if A and B loaders are not aligned
-            # (e.g., last batch); in that case, skip injection safely.
-            if mod_tokens.shape[0] != self.style_token_ba.shape[0]:
-                return output
 
             lam = self._get_style_fusion_lambda()
             if lam == 0.0:
@@ -230,6 +272,12 @@ class UVCGAN2_3D_stylefusion(ModelBase):
             # bottleneck on *this* forward pass.
             content_token = mod_tokens[:, -1, :].clone()  # (N, feat_dim)
 
+            # `style_token_ba` is stored as a single average vector (1, feat_dim).
+            # Expand it to match the batch so AdaIN can be applied per-sample.
+            style_token_ba = self.style_token_ba.to(content_token).expand(
+                content_token.shape[0], -1
+            )
+
             if self.style_fusion_inject == 'add':
                 # Additive replacement (linear interpolation):
                 #   lam=0 => keep original content token
@@ -237,13 +285,13 @@ class UVCGAN2_3D_stylefusion(ModelBase):
                 #
                 # This uses the *raw* cached style token (style_token_ba) as the
                 # target style, per request.
-                new_last = content_token + lam * (self.style_token_ba - content_token)
+                new_last = content_token + lam * (style_token_ba - content_token)
             elif self.style_fusion_inject == 'adain':
                 # AdaIN in token space (requested):
                 #   - content = A->B token from the current forward pass
-                #   - style   = cached B->A token from priming on real_b
-                # - injection = AdaIN(content, style) just using full adaIn. 
-                adain_full = self._adain_1d(content_token, self.style_token_ba)
+                #   - style   = checkpointed running-average B->A token
+                # no lambda is used here. 
+                adain_full = self._adain_1d(content_token, style_token_ba)
                 new_last = adain_full
             else:
                 # Should be prevented by __init__ validation, but keep safe.
@@ -676,13 +724,23 @@ class UVCGAN2_3D_stylefusion(ModelBase):
 
     def forward_dispatch(self, direction):
         if direction == 'ab':
-            if self.images.real_b is not None:
-                self._prime_style_tokens_for_ab()
-            else:
-                self.style_token_ba = None
-                self.style_token_ab = None
-                self.style_delta = None
-                self.style_fusion_enabled = False
+            # Ensure we do NOT update the running B->A style mean when gen_ba is
+            # used as the backward cycle (gen_ba(fake_b)).
+            self.style_ba_update_enabled = False
+            # Only enable style injection for the "real_a -> fake_b" A->B path.
+            # This prevents unintended injection when gen_ab is used as the
+            # backward cycle in the opposite direction.
+            self.style_fusion_enabled = self.style_token_ba is not None
+            # Style fusion is enabled whenever we have a persisted/learned
+            # running-average B->A style token.
+            #
+            # This is intentionally *independent* of whether `real_b` is present
+            # in the current batch:
+            #   - During training, `style_token_ba` is updated whenever gen_ba
+            #     runs (direction 'ba').
+            #   - During inference, `style_token_ba` is loaded from checkpoint,
+            #     so A->B can use the same fixed style without needing paired B.
+            self.style_fusion_enabled = self.style_token_ba is not None
             (
                 self.images.fake_b, self.images.reco_a,
                 self.images.consist_fake_b
@@ -691,18 +749,33 @@ class UVCGAN2_3D_stylefusion(ModelBase):
             )
 
         elif direction == 'ba':
+            # Do NOT inject style into gen_ab when it is used as the backward
+            # cycle (reconstruction) for the B->A direction.
+            self.style_fusion_enabled = False
+            # Enable updating the running-average B->A style token for *real_b*
+            # passes only. The forward hook on the B->A bottleneck will read
+            # this flag and update the streaming mean when True.
+            self.style_ba_update_enabled = True
             (
                 self.images.fake_a, self.images.reco_b,
                 self.images.consist_fake_a
             ) = self.cycle_forward_image(
                 self.images.real_b, self.models.gen_ba, self.models.gen_ab
             )
+            # Disable immediately after the B->A forward so other gen_ba calls
+            # (e.g., idt_a or cycle reconstruction) don't affect the average.
+            self.style_ba_update_enabled = False
 
         elif direction == 'aa':
+            self.style_fusion_enabled = False
+            # Identity pass through gen_ba(real_a) should NOT update the B-style mean.
+            self.style_ba_update_enabled = False
             self.images.idt_a = \
                 self.idt_forward_image(self.images.real_a, self.models.gen_ba)
 
         elif direction == 'bb':
+            self.style_fusion_enabled = False
+            self.style_ba_update_enabled = False
             self.images.idt_b = \
                 self.idt_forward_image(self.images.real_b, self.models.gen_ab)
 
@@ -727,30 +800,52 @@ class UVCGAN2_3D_stylefusion(ModelBase):
         else:
             raise ValueError(f"Unknown forward direction: '{direction}'")
 
-    def _prime_style_tokens_for_ab(self):
-        # Prime style fusion for the upcoming A->B forward pass.
+    def _save_model_state(self, epoch):
+        # Persist the running-average style token to disk alongside checkpoints.
         #
-        # Goal:
-        #   - Cache a B-domain "style token" by running the B->A generator on
-        #     real_b (this triggers `capture_style_token_ba`).
-        #   - Enable injection so that the *next* gen_ab(real_a) call will
-        #     AdaIN the A->B content token with the cached B->A style token.
+        # Why:
+        #   - The running mean is NOT part of any torch.nn.Module parameters,
+        #     so it would otherwise be lost at save/load.
+        #   - Inference needs a stable "B style" even without access to real_b.
         #
-        # Note: We intentionally do NOT compute a delta token anymore.
-        self.style_fusion_enabled = False
-        self.style_delta = None
-        self.style_token_ba = None
+        # What we save:
+        #   - style_token_ba       : averaged style vector (1, feat_dim) on CPU
+        #   - style_token_ba_count : number of samples contributing to the mean
+        state = {
+            "style_token_ba": None if self.style_token_ba is None else self.style_token_ba.detach().cpu(),
+            "style_token_ba_count": int(getattr(self, "style_token_ba_count", 0)),
+        }
 
-        with torch.no_grad():
-            _ = self.models.gen_ba(self.images.real_b)
-            # Optional: also capture the unmodified A->B token for debugging.
-            _ = self.models.gen_ab(self.images.real_a)
+        save_path = get_save_path(
+            self.savedir, self.STYLE_FUSION_STATE_NAME, epoch, mkdir=True
+        )
+        torch.save(state, save_path)
 
-        if self.style_token_ba is None:
-            self.style_fusion_enabled = False
+    def _load_model_state(self, epoch):
+        # Restore the running-average style token from disk.
+        #
+        # Backward compatibility:
+        #   - Older checkpoints may not have this file; in that case, style
+        #     fusion simply stays disabled until training accumulates a mean.
+        load_path = get_save_path(
+            self.savedir, self.STYLE_FUSION_STATE_NAME, epoch, mkdir=False
+        )
+        if not os.path.exists(load_path):
             return
 
-        self.style_fusion_enabled = True
+        state = torch.load(load_path, map_location=self.device)
+        self.style_token_ba_count = int(state.get("style_token_ba_count", 0))
+
+        token = state.get("style_token_ba", None)
+        if token is None:
+            self.style_token_ba = None
+            return
+
+        # Keep the (1, feat_dim) convention on the active device.
+        token = token.to(self.device)
+        if token.ndim == 1:
+            token = token.unsqueeze(0)
+        self.style_token_ba = token
 
     def forward(self):
         if self.images.real_a is not None:
@@ -934,7 +1029,9 @@ class UVCGAN2_3D_stylefusion(ModelBase):
         self.set_requires_grad([self.models.disc_a, self.models.disc_b], False)
         self.optimizers.gen.zero_grad(set_to_none = True)
 
-        dir_list = [ 'ab', 'ba' ]
+        # Run B->A first so the running-average B-style token is updated from
+        # the current `real_b` batch before it is used for A->B style injection.
+        dir_list = [ 'ba', 'ab' ]
         if self.lambda_idt > 0:
             dir_list += [ 'aa', 'bb' ]
 

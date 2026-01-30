@@ -18,9 +18,13 @@ set -euo pipefail
 #   LAMBDA_STYLE_FUSION=0.0          # only meaningful if USE_STYLE_FUSION=1
 #   STYLE_FUSION_INJECT=adain        # 'add' or 'adain'
 
-ROOT_DATA_PATH="${1:-}"
+# Default dataset root for this environment; you can still override by passing
+# a different path as the first argument.
+DEFAULT_ROOT_DATA_PATH="/home/durrlab-asong/Anthony/subset_training_data_crypts"
+
+ROOT_DATA_PATH="${1:-${DEFAULT_ROOT_DATA_PATH}}"
 if [[ -z "${ROOT_DATA_PATH}" ]]; then
-  echo "Usage: $(basename "$0") /abs/path/to/dataset_root" >&2
+  echo "Usage: $(basename "$0") [/abs/path/to/dataset_root]" >&2
   exit 2
 fi
 
@@ -35,11 +39,6 @@ LAMBDA_EMBEDDING_LOSS="${LAMBDA_EMBEDDING_LOSS:-0}"
 LAMBDA_STYLE_FUSION="${LAMBDA_STYLE_FUSION:-0.0}"
 STYLE_FUSION_INJECT="${STYLE_FUSION_INJECT:-adain}"
 
-STYLE_FUSION_FLAG="--no-style-fusion"
-if [[ "${USE_STYLE_FUSION:-0}" == "1" ]]; then
-  STYLE_FUSION_FLAG="--use-style-fusion"
-fi
-
 # Resolve the training entrypoint relative to this script file so it works
 # regardless of where you run it from.
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -51,7 +50,5 @@ python3 "${TRAIN_PY}" \
   --z-spacing "${Z_SPACING}" \
   --lambda-sub-loss "${LAMBDA_SUB_LOSS}" \
   --lambda-embedding-loss "${LAMBDA_EMBEDDING_LOSS}" \
-  "${STYLE_FUSION_FLAG}" \
   --lambda-style-fusion "${LAMBDA_STYLE_FUSION}" \
   --style-fusion-inject "${STYLE_FUSION_INJECT}"
-

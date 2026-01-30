@@ -242,13 +242,9 @@ class UVCGAN2_3D_stylefusion(ModelBase):
                 # AdaIN in token space (requested):
                 #   - content = A->B token from the current forward pass
                 #   - style   = cached B->A token from priming on real_b
-                #
-                # We still respect `lam` by interpolating between the original
-                # token and the fully AdaIN-stylized token:
-                #   lam=0 => no change
-                #   lam=1 => full AdaIN(content, style_ba)
+                # - injection = AdaIN(content, style) just using full adaIn. 
                 adain_full = self._adain_1d(content_token, self.style_token_ba)
-                new_last = content_token + lam * (adain_full - content_token)
+                new_last = adain_full
             else:
                 # Should be prevented by __init__ validation, but keep safe.
                 return output

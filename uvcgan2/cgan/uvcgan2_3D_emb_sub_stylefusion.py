@@ -153,9 +153,20 @@ class UVCGAN2_3D_stylefusion(ModelBase):
         )
 
     def _setup_style_fusion(self, models):
-        self.style_token_ba = None
-        self.style_token_ab = None
-        self.style_delta = None
+        # --- Style fusion state (cached per step/batch) ---
+        #
+        # We treat the ViT bottleneck's *last* "extra token" as a compact
+        # per-image style code (see ExtendedPixelwiseViT.forward()).
+        #
+        # During an A->B translation pass, we:
+        #   1) "Prime" by running B->A on real_b to cache a B-domain style token.
+        #   2) Run A->B on real_a, and at the ViT bottleneck, replace the last
+        #      extra token using AdaIN(content_token_ab, style_token_ba).
+        #
+        # This replaces the previous behavior that used an A/B *delta* token.
+        self.style_token_ba = None  # cached style token from B->A generator (domain B reference)
+        self.style_token_ab = None  # cached style token from A->B generator (domain A content; mostly for debugging)
+        self.style_delta = None      # deprecated: kept for backwards compatibility; no longer used
         self.style_fusion_enabled = False
         self.style_fusion_handles = {}
 
@@ -165,41 +176,76 @@ class UVCGAN2_3D_stylefusion(ModelBase):
         feat_dim = bottleneck_ba.extra_tokens.shape[2]
 
         def capture_style_token_ba(_module, _inputs, output):
-            # Cache style token from domain B (B->A).
-            mod = output[1]
-            mod_tokens = mod.view(mod.shape[0], n_ext, feat_dim)
+            # Capture the *reference style token* from the B->A generator.
+            #
+            # `output` comes from ExtendedPixelwiseViT.forward():
+            #   output[0] = bottleneck feature map
+            #   output[1] = flattened extra tokens (N, n_ext * feat_dim)
+            #
+            # We reshape to (N, n_ext, feat_dim) and take the final extra token
+            # as the "style token" we want to inject into A->B.
+            mod_flat = output[1]
+            mod_tokens = mod_flat.view(mod_flat.shape[0], n_ext, feat_dim)
             self.style_token_ba = mod_tokens[:, -1, :].detach()
 
         def capture_style_token_ab(_module, _inputs, output):
-            # Cache style token from domain A (A->B).
-            mod = output[1]
-            mod_tokens = mod.view(mod.shape[0], n_ext, feat_dim)
+            # Capture the A->B style/content token for inspection/debugging.
+            # The actual "content token" used for injection is taken from the
+            # *current forward pass* inside inject_style_token().
+            mod_flat = output[1]
+            mod_tokens = mod_flat.view(mod_flat.shape[0], n_ext, feat_dim)
             self.style_token_ab = mod_tokens[:, -1, :].detach()
 
         def inject_style_token(_module, _inputs, output):
-            if not self.style_fusion_enabled or self.style_delta is None:
+            # Inject style during the A->B forward pass by modifying the last
+            # extra token produced by the ViT bottleneck.
+            #
+            # New behavior (requested):
+            #   - content token  = A->B token from the *current* forward pass
+            #   - style token    = cached B->A token computed from real_b
+            #   - injection      = AdaIN(content, style) (or simple replacement)
+            #
+            # We keep `lam` as a continuous knob (cosine-decayed over epochs):
+            #   lam=0 => no change
+            #   lam=1 => fully use B->A style token
+            if not self.style_fusion_enabled or self.style_token_ba is None:
                 return output
 
-            result, mod = output
-            mod_tokens = mod.view(mod.shape[0], n_ext, feat_dim)
-            if mod_tokens.shape[0] != self.style_delta.shape[0]:
+            result, mod_flat = output
+            mod_tokens = mod_flat.view(mod_flat.shape[0], n_ext, feat_dim)
+
+            # Batch-size mismatch can happen if A and B loaders are not aligned
+            # (e.g., last batch); in that case, skip injection safely.
+            if mod_tokens.shape[0] != self.style_token_ba.shape[0]:
                 return output
 
             lam = self._get_style_fusion_lambda()
             if lam == 0.0:
                 return output
 
-            # Important: avoid in-place modification of a view that is also used
-            # to compute `style_token` (otherwise autograd can throw a version
-            # counter error). Work functionally on a cloned last token instead.
+            # Avoid in-place edits on a view used elsewhere in autograd.
             mod_tokens = mod_tokens.clone()
-            content_token = mod_tokens[:, -1, :].clone()
-            style_token = content_token + (lam * self.style_delta)
+
+            # The "content token" is the last extra token coming from the A->B
+            # bottleneck on *this* forward pass.
+            content_token = mod_tokens[:, -1, :].clone()  # (N, feat_dim)
+
+            # The "style token" comes from the B->A generator applied to real_b
+            # during priming. We blend it with the content token using `lam`
+            # so the schedule smoothly controls injection strength.
+            #
+            # target_style = (1-lam)*content + lam*style_ba
+            target_style_token = content_token + (
+                lam * (self.style_token_ba - content_token)
+            )
 
             if self.style_fusion_inject == 'add':
-                new_last = style_token
+                # Replace the last token with the blended target style token.
+                new_last = target_style_token
             elif self.style_fusion_inject == 'adain':
-                new_last = self._adain_1d(content_token, style_token)
+                # Apply AdaIN in token space: keep content structure but match
+                # the per-token mean/std statistics to the style token.
+                new_last = self._adain_1d(content_token, target_style_token)
             else:
                 # Should be prevented by __init__ validation, but keep safe.
                 return output
@@ -208,7 +254,7 @@ class UVCGAN2_3D_stylefusion(ModelBase):
                 [mod_tokens[:, :-1, :], new_last.unsqueeze(1)],
                 dim=1,
             )
-            return (result, new_tokens.reshape(mod.shape[0], -1))
+            return (result, new_tokens.reshape(mod_flat.shape[0], -1))
 
         self.style_fusion_handles["ba_capture"] = (
             bottleneck_ba.register_forward_hook(capture_style_token_ba)
@@ -274,7 +320,7 @@ class UVCGAN2_3D_stylefusion(ModelBase):
         lambda_subtraction_loss = 0.5, # This is the weight for the subtraction loss between z1 and z2 in the adjacent slice mode.
         lambda_embedding_loss = 0.5, # This is the weight for the embedding loss between adjacent slices.
         lambda_style_fusion = 1.0, # Scale factor for style token injection; decays with epochs (cosine schedule).
-        style_fusion_inject = 'add', # Injection method for the last ViT style token: 'add' or 'adain'.
+        style_fusion_inject = 'adain', # Injection method for the last ViT style token: 'add' or 'adain'.
         head_queue_size = 3,
         avg_momentum    = None,
         consistency     = None,
@@ -683,23 +729,28 @@ class UVCGAN2_3D_stylefusion(ModelBase):
             raise ValueError(f"Unknown forward direction: '{direction}'")
 
     def _prime_style_tokens_for_ab(self):
-        # Populate the style delta (A->B minus B->A) before A->B forward pass.
+        # Prime style fusion for the upcoming A->B forward pass.
+        #
+        # Goal:
+        #   - Cache a B-domain "style token" by running the B->A generator on
+        #     real_b (this triggers `capture_style_token_ba`).
+        #   - Enable injection so that the *next* gen_ab(real_a) call will
+        #     AdaIN the A->B content token with the cached B->A style token.
+        #
+        # Note: We intentionally do NOT compute a delta token anymore.
         self.style_fusion_enabled = False
+        self.style_delta = None
+        self.style_token_ba = None
+
         with torch.no_grad():
             _ = self.models.gen_ba(self.images.real_b)
+            # Optional: also capture the unmodified A->B token for debugging.
             _ = self.models.gen_ab(self.images.real_a)
 
-        if self.style_token_ab is None or self.style_token_ba is None:
-            self.style_delta = None
+        if self.style_token_ba is None:
             self.style_fusion_enabled = False
             return
 
-        if self.style_token_ab.shape != self.style_token_ba.shape:
-            self.style_delta = None
-            self.style_fusion_enabled = False
-            return
-
-        self.style_delta = self.style_token_ab - self.style_token_ba
         self.style_fusion_enabled = True
 
     def forward(self):

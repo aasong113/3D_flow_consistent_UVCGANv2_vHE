@@ -230,22 +230,25 @@ class UVCGAN2_3D_stylefusion(ModelBase):
             # bottleneck on *this* forward pass.
             content_token = mod_tokens[:, -1, :].clone()  # (N, feat_dim)
 
-            # The "style token" comes from the B->A generator applied to real_b
-            # during priming. We blend it with the content token using `lam`
-            # so the schedule smoothly controls injection strength.
-            #
-            # target_style = (1-lam)*content + lam*style_ba
-            target_style_token = content_token + (
-                lam * (self.style_token_ba - content_token)
-            )
-
             if self.style_fusion_inject == 'add':
-                # Replace the last token with the blended target style token.
-                new_last = target_style_token
+                # Additive replacement (linear interpolation):
+                #   lam=0 => keep original content token
+                #   lam=1 => fully replace with the cached B->A style token
+                #
+                # This uses the *raw* cached style token (style_token_ba) as the
+                # target style, per request.
+                new_last = content_token + lam * (self.style_token_ba - content_token)
             elif self.style_fusion_inject == 'adain':
-                # Apply AdaIN in token space: keep content structure but match
-                # the per-token mean/std statistics to the style token.
-                new_last = self._adain_1d(content_token, target_style_token)
+                # AdaIN in token space (requested):
+                #   - content = A->B token from the current forward pass
+                #   - style   = cached B->A token from priming on real_b
+                #
+                # We still respect `lam` by interpolating between the original
+                # token and the fully AdaIN-stylized token:
+                #   lam=0 => no change
+                #   lam=1 => full AdaIN(content, style_ba)
+                adain_full = self._adain_1d(content_token, self.style_token_ba)
+                new_last = content_token + lam * (adain_full - content_token)
             else:
                 # Should be prevented by __init__ validation, but keep safe.
                 return output

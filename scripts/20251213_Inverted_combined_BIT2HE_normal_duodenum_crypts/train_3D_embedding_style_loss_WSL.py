@@ -96,6 +96,13 @@ def parse_cmdargs():
     )
 
     parser.add_argument(
+        '--lambda-style-loss',
+        type=float,
+        default=1.0,
+        help='Weight for ViT bottleneck style-stat loss (gen_ba(real_b) vs gen_ba(fake_b))'
+    )
+
+    parser.add_argument(
         '--style-fusion-inject',
         choices=['add', 'adain'],
         default='add',
@@ -255,6 +262,7 @@ args_dict = {
         'lambda_idt'      : 0.5,
         'lambda_subtraction_loss' : cmdargs.lambda_sub_loss,  # You can adjust this weight as needed
         'lambda_embedding_loss' : cmdargs.lambda_embedding_loss,  # You can adjust this weight as needed
+        'lambda_style_loss' : cmdargs.lambda_style_loss,
         'lambda_style_fusion' : cmdargs.lambda_style_fusion,
         'style_fusion_inject' : cmdargs.style_fusion_inject,
         'avg_momentum'    : 0.9999,
@@ -287,7 +295,7 @@ args_dict = {
 
     'outdir'     : os.path.join(model_save_dir, f'{today_str}_duodenum_only_crypts_3DFlow_zspacing={cmdargs.z_spacing}slices_lamsub={lambda_sub_str}_lamemb={lambda_emb_str}_lamSty={lambda_sty_str}'),
     'log_level'  : 'DEBUG',
-    'checkpoint' : 3,
+    'checkpoint' : 10,
 }
 print(ROOT_OUTDIR)
 

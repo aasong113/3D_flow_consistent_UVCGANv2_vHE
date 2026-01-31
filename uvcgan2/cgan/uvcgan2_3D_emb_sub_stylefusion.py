@@ -190,6 +190,18 @@ class UVCGAN2_3D_stylefusion(ModelBase):
         # because inside the bottleneck hook we do not yet have access to the final
         # generated image tensor `fake_b`.
         self._style_fusion_injected_this_forward = False
+        # Tag used to disambiguate which gen_ba forward pass we are observing.
+        #
+        # gen_ba runs multiple times per training step:
+        #   - direction 'ba' : gen_ba(real_b)         -> should be tagged "real_b"
+        #   - direction 'ab' : gen_ba(fake_b) (reco_a)-> should be tagged "fake_b"
+        #   - direction 'aa' : gen_ba(real_a) (idt)   -> should be untagged/ignored
+        #
+        # We use this tag inside the bottleneck hook to cache per-iteration
+        # style embeddings for the requested style loss.
+        self._style_ba_capture_tag = None
+        self._style_tokens_ba_real_b = None  # detached target style tokens from gen_ba(real_b), shape (N, feat_dim)
+        self._style_tokens_ba_fake_b = None  # style tokens from gen_ba(fake_b) WITH grad, shape (N, feat_dim)
 
         bottleneck_ba = self._get_vit_bottleneck(models['gen_ba'])
         bottleneck_ab = self._get_vit_bottleneck(models['gen_ab'])
@@ -209,7 +221,22 @@ class UVCGAN2_3D_stylefusion(ModelBase):
             mod_tokens = mod_flat.view(mod_flat.shape[0], n_ext, feat_dim)
 
             # Per-sample style tokens from this forward (N, feat_dim).
-            batch_style = mod_tokens[:, -1, :].detach()
+            #
+            # NOTE: We keep both a detached copy (for running-average updates and
+            # as a stable target) and a non-detached tensor (so gradients can
+            # flow for the style loss on the fake_b path).
+            batch_style = mod_tokens[:, -1, :]
+
+            # --- Per-iteration style token caching (requested style loss) ---
+            #
+            # Cache the style token for:
+            #   - real_b : used as a detached target
+            #   - fake_b : kept with grad so the style loss can train gen_ab/gen_ba
+            tag = getattr(self, "_style_ba_capture_tag", None)
+            if tag == "real_b":
+                self._style_tokens_ba_real_b = batch_style.detach()
+            elif tag == "fake_b":
+                self._style_tokens_ba_fake_b = batch_style
 
             # During inference/eval we want to keep the checkpointed average fixed.
             #
@@ -227,8 +254,9 @@ class UVCGAN2_3D_stylefusion(ModelBase):
             #   mean_new = (mean_old * count_old + sum(batch_style)) / (count_old + N)
             #
             # This implements the true average style token over training.
-            batch_count = int(batch_style.shape[0])
-            batch_sum = batch_style.sum(dim=0, keepdim=True)  # (1, feat_dim)
+            batch_style_detached = batch_style.detach()
+            batch_count = int(batch_style_detached.shape[0])
+            batch_sum = batch_style_detached.sum(dim=0, keepdim=True)  # (1, feat_dim)
 
             if self.style_token_ba is None or self.style_token_ba_count <= 0:
                 self.style_token_ba = batch_sum / float(batch_count)
@@ -346,6 +374,10 @@ class UVCGAN2_3D_stylefusion(ModelBase):
         if self.is_train and self.lambda_embedding_loss > 0: 
             losses += [ 'embedding_adj']  
 
+        # Style loss computed from gen_ba's ViT bottleneck style token stats.
+        if self.is_train and getattr(self, "lambda_style_loss", 0) > 0:
+            losses += [ 'style' ]
+
         return NamedDict(*losses)
 
     def _setup_optimizers(self, config):
@@ -377,6 +409,7 @@ class UVCGAN2_3D_stylefusion(ModelBase):
         lambda_consist  = 0,
         lambda_subtraction_loss = 0.5, # This is the weight for the subtraction loss between z1 and z2 in the adjacent slice mode.
         lambda_embedding_loss = 0.5, # This is the weight for the embedding loss between adjacent slices.
+        lambda_style_loss = 1.0, # Style loss weight comparing gen_ba(real_b) vs gen_ba(fake_b) style-token stats.
         lambda_style_fusion = 1.0, # Scale factor for style token injection; decays with epochs (cosine schedule).
         style_fusion_inject = 'adain', # Injection method for the last ViT style token: 'add' or 'adain'.
         head_queue_size = 3,
@@ -393,6 +426,7 @@ class UVCGAN2_3D_stylefusion(ModelBase):
         self.lambda_consist = lambda_consist
         self.lambda_sub_loss = lambda_subtraction_loss # subtraction Loss
         self.lambda_embedding_loss = lambda_embedding_loss # embedding Losss
+        self.lambda_style_loss = lambda_style_loss
         self.lambda_style_fusion_base = lambda_style_fusion
         self.style_fusion_inject = style_fusion_inject
         self.avg_momentum   = avg_momentum
@@ -409,7 +443,14 @@ class UVCGAN2_3D_stylefusion(ModelBase):
                 f"(got {self.style_fusion_inject!r})"
             )
 
-        print(f"Initialized UVCGAN2_3D_embedding_loss with lambda_a={lambda_a}, lambda_b={lambda_b}, lambda_idt={lambda_idt}, lambda_consist={lambda_consist}, lambda_subtraction_loss={lambda_subtraction_loss}, lambda_embedding_loss={lambda_embedding_loss}, lambda_style_fusion={lambda_style_fusion}, style_fusion_inject={style_fusion_inject}, avg_momentum={avg_momentum}, z_spacing={z_spacing}")
+        print(
+            f"Initialized UVCGAN2_3D_embedding_loss with "
+            f"lambda_a={lambda_a}, lambda_b={lambda_b}, lambda_idt={lambda_idt}, "
+            f"lambda_consist={lambda_consist}, lambda_subtraction_loss={lambda_subtraction_loss}, "
+            f"lambda_embedding_loss={lambda_embedding_loss}, lambda_style_loss={lambda_style_loss}, "
+            f"lambda_style_fusion={lambda_style_fusion}, style_fusion_inject={style_fusion_inject}, "
+            f"avg_momentum={avg_momentum}, z_spacing={z_spacing}"
+        )
 
         # 🔥 Correct handling of debug_root
         if debug_root is not None:
@@ -437,6 +478,7 @@ class UVCGAN2_3D_stylefusion(ModelBase):
         self.criterion_consist = torch.nn.L1Loss()
         self.criterion_subtract = torch.nn.L1Loss()  # Loss for the subtraction between adjacent slices in domain A.
         self.criterion_embedding = torch.nn.L1Loss()  # Loss for the embedding consistency between adjacent slices in domain A.
+        self.criterion_style = torch.nn.MSELoss()  # L2 (mean-squared) loss for style token statistic matching.
 
         if self.is_train:
             self.queues = NamedDict(**{
@@ -756,12 +798,18 @@ class UVCGAN2_3D_stylefusion(ModelBase):
             # True only if it actually applied a style-token modification.
             self._style_fusion_injected_this_forward = False
 
+            # Tag the upcoming gen_ba(fake_b) reconstruction pass so the gen_ba
+            # bottleneck hook can cache per-iteration style tokens for the style loss.
+            self._style_ba_capture_tag = "fake_b"
+
             (
                 self.images.fake_b, self.images.reco_a,
                 self.images.consist_fake_b
             ) = self.cycle_forward_image(
                 self.images.real_a, self.models.gen_ab, self.models.gen_ba
             )
+            # Clear tag after gen_ba(fake_b) has executed inside cycle_forward_image().
+            self._style_ba_capture_tag = None
 
             # Save style-fusion debug images (every 100 training steps) *after*
             # the full A->B generator forward completes.
@@ -838,12 +886,18 @@ class UVCGAN2_3D_stylefusion(ModelBase):
             # passes only. The forward hook on the B->A bottleneck will read
             # this flag and update the streaming mean when True.
             self.style_ba_update_enabled = True
+            # Tag the gen_ba(real_b) forward so the bottleneck hook caches the
+            # "real B" style token for the style loss target.
+            self._style_ba_capture_tag = "real_b"
+
             (
                 self.images.fake_a, self.images.reco_b,
                 self.images.consist_fake_a
             ) = self.cycle_forward_image(
                 self.images.real_b, self.models.gen_ba, self.models.gen_ab
             )
+            # Clear tag after gen_ba(real_b) has executed inside cycle_forward_image().
+            self._style_ba_capture_tag = None
             # Disable immediately after the B->A forward so other gen_ba calls
             # (e.g., idt_a or cycle reconstruction) don't affect the average.
             self.style_ba_update_enabled = False
@@ -977,6 +1031,47 @@ class UVCGAN2_3D_stylefusion(ModelBase):
 
         return (loss_idt, loss)
 
+    def eval_style_loss_ba_vit_token_stats(self):
+        """
+        Style loss based on gen_ba's ViT bottleneck *style token* statistics.
+
+        We compare, per training iteration:
+          - "style source" : style token from gen_ba(real_b)
+          - "style target" : style token from gen_ba(fake_b)  (fake_b = gen_ab(real_a))
+
+        The loss matches the *mean* and *standard deviation* (computed over the
+        feature dimension of the token embedding) using an L2/MSE penalty:
+
+          L_s = || mu(fake) - mu(real) ||^2 + || sigma(fake) - sigma(real) ||^2
+
+        Notes:
+          - This uses the *per-iteration* cached tokens (NOT the running-average
+            token used for style injection).
+          - The "real_b" token is detached so it acts as a fixed style target
+            for this step; the "fake_b" token keeps gradients.
+        """
+        real_tok = getattr(self, "_style_tokens_ba_real_b", None)
+        fake_tok = getattr(self, "_style_tokens_ba_fake_b", None)
+        if real_tok is None or fake_tok is None:
+            return None
+
+        # Handle rare batch-size mismatches safely.
+        if real_tok.shape[0] != fake_tok.shape[0]:
+            return None
+
+        # Compute per-sample mean/std over feature dimension.
+        # Tokens are shaped (N, feat_dim), so mu/sigma are (N,).
+        mu_real = real_tok.mean(dim=1)
+        mu_fake = fake_tok.mean(dim=1)
+
+        # Use population std (unbiased=False) for stability on small dims.
+        std_real = real_tok.var(dim=1, unbiased=False).sqrt()
+        std_fake = fake_tok.var(dim=1, unbiased=False).sqrt()
+
+        loss_mu = self.criterion_style(mu_fake, mu_real)
+        loss_std = self.criterion_style(std_fake, std_real)
+        return loss_mu + loss_std
+
     def backward_gen(self, direction):
         if direction == 'ab':
             (self.losses.gen_ab, self.losses.cycle_a, loss) \
@@ -1021,6 +1116,24 @@ class UVCGAN2_3D_stylefusion(ModelBase):
             # if running original UVCGAN2 without adjacent slice losses.  
             if self.lambda_embedding_loss == 0 and self.lambda_sub_loss == 0 and hasattr(self.images, "real_a_adj"):
                 self.save_forward_image(self.images.real_a, self.images.real_a_adj, self.models.gen_ab, step=self.current_step)
+
+            # --- Style loss (gen_ba ViT style-token stats) ---
+            #
+            # This style loss is independent of style *injection*; it can be used
+            # even when lambda_style_fusion == 0.
+            #
+            # It relies on the gen_ba bottleneck hook having cached:
+            #   - _style_tokens_ba_real_b from direction 'ba' (gen_ba(real_b))
+            #   - _style_tokens_ba_fake_b from direction 'ab' (gen_ba(fake_b) inside reconstruction)
+            if getattr(self, "lambda_style_loss", 0) > 0:
+                style_loss = self.eval_style_loss_ba_vit_token_stats()
+                if style_loss is not None:
+                    self.losses.style = style_loss
+                    loss += float(self.lambda_style_loss) * self.losses.style
+
+            # Clear cached fake token to avoid holding a computation graph longer
+            # than necessary (prevents memory growth over training).
+            self._style_tokens_ba_fake_b = None
 
 
         elif direction == 'ba':

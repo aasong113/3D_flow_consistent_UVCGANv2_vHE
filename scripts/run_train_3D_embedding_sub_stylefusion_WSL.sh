@@ -14,6 +14,7 @@ set -euo pipefail
 #   Z_SPACING=2
 #   LAMBDA_SUB_LOSS=0
 #   LAMBDA_EMBEDDING_LOSS=0
+#   LAMBDA_STYLE_LOSS=1.0
 #   USE_STYLE_FUSION=0               # 0 disables, 1 enables
 #   LAMBDA_STYLE_FUSION=0.0          # only meaningful if USE_STYLE_FUSION=1
 #   STYLE_FUSION_INJECT=adain        # 'add' or 'adain'
@@ -36,6 +37,7 @@ BATCH_SIZE="${BATCH_SIZE:-1}"
 Z_SPACING="${Z_SPACING:-2}"
 LAMBDA_SUB_LOSS="${LAMBDA_SUB_LOSS:-0}"
 LAMBDA_EMBEDDING_LOSS="${LAMBDA_EMBEDDING_LOSS:-0}"
+LAMBDA_STYLE_LOSS="${LAMBDA_STYLE_LOSS:-1.0}"
 LAMBDA_STYLE_FUSION="${LAMBDA_STYLE_FUSION:-0.0}"
 STYLE_FUSION_INJECT="${STYLE_FUSION_INJECT:-adain}"
 
@@ -50,5 +52,6 @@ python3 "${TRAIN_PY}" \
   --z-spacing "${Z_SPACING}" \
   --lambda-sub-loss "${LAMBDA_SUB_LOSS}" \
   --lambda-embedding-loss "${LAMBDA_EMBEDDING_LOSS}" \
+  --lambda-style-loss "${LAMBDA_STYLE_LOSS}" \
   --lambda-style-fusion "${LAMBDA_STYLE_FUSION}" \
   --style-fusion-inject "${STYLE_FUSION_INJECT}"

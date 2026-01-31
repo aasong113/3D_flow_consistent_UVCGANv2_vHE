@@ -104,7 +104,7 @@ def parse_cmdargs():
     parser.add_argument(
         '--style-fusion-inject',
         choices=['add', 'adain'],
-        default='add',
+        default='adain',
         help="How to inject the style delta into the A->B ViT style token: 'add' or 'adain'"
     )
 
@@ -325,7 +325,7 @@ args_dict = {
         f':{cmdargs.lambda_cyc}:{cmdargs.lambda_gp}:{cmdargs.lr_gen})'
     ),
 
-    'outdir'     : os.path.join(model_save_dir, f'{today_str}_duodenum_only_crypts_3DFlow_zspacing={cmdargs.z_spacing}slices_lamsub={lambda_sub_str}_lamemb={lambda_emb_str}_lamSty={lambda_sty_str}'),
+    'outdir'     : os.path.join(model_save_dir, f'{today_str}_duodenum_crypts_3DFlow_style_fusion_zspacing={cmdargs.z_spacing}slices_lamsub={lambda_sub_str}_lamemb={lambda_emb_str}_lamSty={lambda_sty_str}'),
     'log_level'  : 'DEBUG',
     'checkpoint' : 10,
 }

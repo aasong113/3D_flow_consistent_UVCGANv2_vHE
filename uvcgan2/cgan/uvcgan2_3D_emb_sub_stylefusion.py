@@ -1147,18 +1147,26 @@ class UVCGAN2_3D_stylefusion(ModelBase):
             )
             loss_gp.backward()
 
-        pred_real = queued_forward(
-            model, real, queue_real, update_queue = True
+        # NOTE:
+        # `FastQueue.push()` updates the underlying queue tensor in-place. If we
+        # push into the queue before backprop, autograd can error with:
+        #   "variable needed for gradient computation has been modified by an inplace operation"
+        # So we defer queue updates until *after* `loss.backward()`.
+        pred_real, pred_body_real = model.forward(
+            real, extra_bodies=queue_real.query(), return_body=True
         )
         loss_real = self.criterion_gan(pred_real, True)
 
-        pred_fake = queued_forward(
-            model, fake, queue_fake, update_queue = True
+        pred_fake, pred_body_fake = model.forward(
+            fake, extra_bodies=queue_fake.query(), return_body=True
         )
         loss_fake = self.criterion_gan(pred_fake, False)
 
         loss = (loss_real + loss_fake) * 0.5
         loss.backward()
+
+        queue_real.push(pred_body_real)
+        queue_fake.push(pred_body_fake)
 
         return (loss_gp, loss)
 

@@ -21,7 +21,7 @@ set -euo pipefail
 
 # Default dataset root for this environment; you can still override by passing
 # a different path as the first argument.
-DEFAULT_ROOT_DATA_PATH="/home/durrlab-asong/Anthony/subset_training_data_crypts"
+DEFAULT_ROOT_DATA_PATH="/home/durrlab-asong/Anthony/duodenum_crypts_full_data"
 
 ROOT_DATA_PATH="${1:-${DEFAULT_ROOT_DATA_PATH}}"
 if [[ -z "${ROOT_DATA_PATH}" ]]; then
@@ -38,7 +38,6 @@ Z_SPACING="${Z_SPACING:-2}"
 LAMBDA_SUB_LOSS="${LAMBDA_SUB_LOSS:-0}"
 LAMBDA_EMBEDDING_LOSS="${LAMBDA_EMBEDDING_LOSS:-0}"
 LAMBDA_STYLE_LOSS="${LAMBDA_STYLE_LOSS:-1.0}"
-LAMBDA_STYLE_FUSION="${LAMBDA_STYLE_FUSION:-0.0}"
 STYLE_FUSION_INJECT="${STYLE_FUSION_INJECT:-adain}"
 
 # Resolve the training entrypoint relative to this script file so it works
@@ -53,5 +52,4 @@ python3 "${TRAIN_PY}" \
   --lambda-sub-loss "${LAMBDA_SUB_LOSS}" \
   --lambda-embedding-loss "${LAMBDA_EMBEDDING_LOSS}" \
   --lambda-style-loss "${LAMBDA_STYLE_LOSS}" \
-  --lambda-style-fusion "${LAMBDA_STYLE_FUSION}" \
   --style-fusion-inject "${STYLE_FUSION_INJECT}"

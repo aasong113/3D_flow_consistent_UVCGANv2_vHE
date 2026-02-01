@@ -798,7 +798,7 @@ class UVCGAN2_3D_stylefusion(ModelBase):
             if (
                 self.is_train
                 and self.debug_root is not None
-                and (self.current_step % 100 == 0)
+                and (self.current_step % 1000 == 0)
                 and self._style_fusion_injected_this_forward
             ):
                 os.makedirs(self.debug_root, exist_ok=True)
@@ -806,7 +806,16 @@ class UVCGAN2_3D_stylefusion(ModelBase):
                 def _safe_name(name):
                     # Make filenames robust to characters like '/' or '=' that can
                     # appear in dataset-provided image IDs.
-                    return str(name).replace(os.sep, "_").replace("/", "_").replace("\\", "_").replace("=", "-")
+                    # Also strip known image suffixes so we don't end up with
+                    # filenames like "..._img=0_P=1.tif_realA_z.png".
+                    base = os.path.basename(str(name))
+                    while True:
+                        root, ext = os.path.splitext(base)
+                        if ext.lower() in {".tif", ".tiff", ".png", ".jpg", ".jpeg"} and root:
+                            base = root
+                            continue
+                        break
+                    return base.replace(os.sep, "_").replace("/", "_").replace("\\", "_").replace("=", "-")
 
                 step = int(self.current_step)
                 # Always include the global training step in filenames to avoid

@@ -296,7 +296,14 @@ class UVCGAN2_3D_stylefusion(ModelBase):
             mod_tokens = mod_flat.view(mod_flat.shape[0], n_ext, feat_dim)
 
             lam = self._get_style_fusion_lambda()
-            if lam == 0.0:
+            # IMPORTANT:
+            #   - For 'add' injection, `lam` is the strength of the linear interpolation,
+            #     so lam==0 means "do nothing" and we can early-return.
+            #   - For 'adain' injection, we want style fusion to remain active even
+            #     when lam==0, because AdaIN does not rely on the lambda schedule.
+            #     In other words, 'adain' is treated as "always-on" whenever
+            #     style fusion is enabled and a style_token_ba exists.
+            if self.style_fusion_inject == 'add' and lam == 0.0:
                 return output
 
             # Avoid in-place edits on a view used elsewhere in autograd.
@@ -324,7 +331,7 @@ class UVCGAN2_3D_stylefusion(ModelBase):
                 # AdaIN in token space (requested):
                 #   - content = A->B token from the current forward pass
                 #   - style   = checkpointed running-average B->A token
-                # no lambda is used here. 
+                # AdaIN runs regardless of `lam` (see early-return logic above).
                 adain_full = self._adain_1d(content_token, style_token_ba)
                 new_last = adain_full
             else:

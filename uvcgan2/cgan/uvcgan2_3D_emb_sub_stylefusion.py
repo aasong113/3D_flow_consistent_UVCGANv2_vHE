@@ -556,42 +556,6 @@ class UVCGAN2_3D_stylefusion(ModelBase):
 
         return (fake, reco, consist_fake)
 
-
-    # Style Fusion. Takes input vHE and FFPE HE and generator from HE2BIT. We want to get the style code from the FFPE HE and vHE then fuse it with the style Gen BIT2HE before modulated upconvolution. 
-    def style_fusion(self, real_a, real_b, gen_ba, gen_ab):
-
-        # --------- 1. Setup embedding storage dict ---------
-        if not hasattr(self, "embedding_storage"):
-            self.embedding_storage = {}
-
-        def make_hook(name):
-            def hook(module, input, output):
-                self.embedding_storage[name] = output.detach()
-            return hook
-
-    
-        # --------- 2. Register forward hooks (only once) ---------
-        if not hasattr(self, "hook_handles"):
-            self.hook_handles = {}
-
-            bottleneck_z = gen_ba.net.modnet.inner_module.inner_module.inner_module.inner_module.encoder.encoder[11].norm2
-
-            self.hook_handles["z"] = bottleneck_z.register_forward_hook(make_hook("z"))
-
-        # --------- 3. Forward passes to trigger hooks and get the style token ---------
-        # get the vHE style token from gen_ba (HE2BIT)
-        fake_b = gen_ab(real_a) # get the virtual H&E
-        _ = gen_ba(fake_b)
-        fake_b_vit = self.embedding_storage["z"].clone()
-        fake_b_style = fake_b_vit[-1, :, :]  # (B, D)
-
-        # get the FFPE HE style token from gen_ba (HE2BIT)
-        _ = gen_ba(real_b)
-        real_b_vit = self.embedding_storage["z"].clone()
-        real_b_style = real_b_vit[-1, :, :]  # (B, D)
-
-        return None
-
     # computes the loss in embedding space between adjacent slices. 
     def embedding_loss(self, real_a, real_a_adj, gen_fwd, gen_bkw, step=None):
         """

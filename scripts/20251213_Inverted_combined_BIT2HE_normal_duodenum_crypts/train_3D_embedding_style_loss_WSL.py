@@ -160,7 +160,7 @@ def get_transfer_preset(cmdargs):
     else:
 
         base_model = (
-            "/home/durrlab-asong/Anthony/UVCGANv2_vHE/outdir/20251213_Inverted_Combined_BIT2HE_normal_duodenum_only_crypts_Pretrain/model_m(autoencoder)_d(None)_g(vit-modnet)_pretrain-uvcgan2/"
+            "/home/durrlab-asong/Anthony/UVCGANv2_vHE/outdir/20251225_Inverted_combined_BIT2HE_duodenum_crypts_pretrain/model_m(autoencoder)_d(None)_g(vit-modnet)_pretrain-uvcgan2/"
         )
 
     return {
@@ -184,7 +184,7 @@ data_path_domainB = os.path.join(cmdargs.root_data_path, 'FFPE_HE')
 model_save_dir = os.path.join(ROOT_OUTDIR, f'{today_str}_Inverted_Combined_BIT2HE_normal_duodenum_only_crypts_Train_3DFlow')
 lambda_sub_str = str(cmdargs.lambda_sub_loss).replace('.', 'p')
 lambda_emb_str = str(cmdargs.lambda_embedding_loss).replace('.', 'p')
-lambda_sty_str = str(cmdargs.lambda_style_fusion).replace('.', 'p')
+lambda_sty_str = str(cmdargs.lambda_style_loss).replace('.', 'p')
 wandb_project = cmdargs.wandb_project or (
     f'{today_str}_duodenum_only_crypts_3DFlow_'
     f'zspacing={cmdargs.z_spacing}slices_'

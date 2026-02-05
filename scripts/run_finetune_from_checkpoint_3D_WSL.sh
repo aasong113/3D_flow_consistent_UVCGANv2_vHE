@@ -40,9 +40,9 @@ TRAINB_PATH="/home/durrlab-asong/Anthony/duodenum_crypts_full_data/FFPE_HE/train
 MODEL="uvcgan2_3D_stylefusion"                     # auto|uvcgan2_3D_stylefusion|uvcgan2_3D_embedding_loss|uvcgan2_3D_subtraction_loss
 
 BATCH_SIZE="1"
-EPOCHS="100"
-CHECKPOINT_EVERY="10"
-STEPS_PER_EPOCH="2000"
+EPOCHS="50"
+CHECKPOINT_EVERY="1"
+STEPS_PER_EPOCH="10"
 NUM_WORKERS="1"
 
 Z_SPACING="2"

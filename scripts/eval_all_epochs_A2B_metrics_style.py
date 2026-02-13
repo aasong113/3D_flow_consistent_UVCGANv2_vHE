@@ -92,6 +92,11 @@ def parse_args() -> argparse.Namespace:
         type=int,
     )
     parser.add_argument(
+        "--single-gpu",
+        action="store_true",
+        help="Disable DataParallel even if multiple GPUs are visible (use GPU 0 only).",
+    )
+    parser.add_argument(
         "-n",
         "--n-eval",
         default=None,
@@ -283,6 +288,12 @@ def _maybe_enable_avg_weights_for_stylefusion(model) -> None:
 def main() -> None:
     cmd = parse_args()
 
+    if cmd.single_gpu:
+        os.environ["UVCGAN2_SINGLE_GPU"] = "1"
+        if torch.cuda.is_available():
+            torch.cuda.set_device(0)
+        print("[INFO] Single-GPU mode enabled: DataParallel disabled (using CUDA:0 when available).")
+
     checkpoints_dir = os.path.abspath(os.path.expanduser(cmd.checkpoints_dir))
     model_dir = os.path.dirname(checkpoints_dir.rstrip(os.sep))
 
@@ -397,6 +408,7 @@ def main() -> None:
         f.write(f"n_eval: {cmd.n_eval}\n")
         f.write(f"sample_basename: {sample_base}\n")
         f.write(f"use_avg: {cmd.use_avg}\n")
+        f.write(f"single_gpu: {cmd.single_gpu}\n")
         f.write(f"is_stylefusion_model: {is_stylefusion}\n")
         f.write(f"style_fusion_state_mode: {cmd.style_fusion_state}\n")
         f.write(f"style_fusion_inject_override: {cmd.style_fusion_inject}\n")

@@ -1,4 +1,5 @@
 import logging
+import os
 import random
 import torch
 import numpy as np
@@ -6,6 +7,10 @@ import numpy as np
 from torch import nn
 
 LOGGER = logging.getLogger('uvcgan2.torch')
+
+def _env_flag(name):
+    value = os.getenv(name, "")
+    return value.strip().lower() in ("1", "true", "yes", "y", "on")
 
 def seed_everything(seed):
     torch.manual_seed(seed)
@@ -21,10 +26,24 @@ def get_torch_device_smart():
 def prepare_model(model, device):
     model = model.to(device)
 
-    if torch.cuda.device_count() > 1:
+    disable_dp = (
+        _env_flag("UVCGAN2_SINGLE_GPU")
+        or _env_flag("UVCGAN2_DISABLE_DP")
+        or _env_flag("UVCGAN2_NO_DP")
+    )
+    gpu_count = torch.cuda.device_count()
+
+    if gpu_count > 1 and disable_dp:
+        LOGGER.warning(
+            "Multiple (%d) GPUs found. Single-GPU mode enabled; Data Parallelism disabled.",
+            gpu_count
+        )
+        return model
+
+    if gpu_count > 1:
         LOGGER.warning(
             "Multiple (%d) GPUs found. Using Data Parallelism",
-            torch.cuda.device_count()
+            gpu_count
         )
         model = nn.DataParallel(model)
 
@@ -49,4 +68,3 @@ def update_average_model(average_model, model, momentum):
             v.copy_(momentum * v + (1 - momentum) * online_bufs[k])
         else:
             v.lerp_(online_bufs[k], (1 - momentum))
-

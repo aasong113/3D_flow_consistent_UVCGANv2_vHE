@@ -13,20 +13,20 @@ set -euo pipefail
 # `uvcgan2_3D_emb_sub_stylefusion.py` (config.model == "uvcgan2_3D_stylefusion").
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PY_SCRIPT="/home/durrlab-asong/Anthony/3D_flow_consistent_UVCGANv2_vHE/scripts/eval_all_epochs_A2B_metrics_style.py"
+PY_SCRIPT="/home/durrlab/Desktop/Anthony/UGVSM/3D_flow_consistent_UVCGANv2_vHE/scripts/eval_all_epochs_A2B_metrics_style.py"
 
 # Keep these defaults minimal; override via CLI flags below.
-DEFAULT_CHECKPOINTS_DIR="/home/durrlab-asong/Anthony/3D_flow_consistent_UVCGANv2_vHE/outdir/20260210_Inverted_Combined_BIT2HE_duodenum_crypts_lieberkuhn_Style_injection/outdir/20260211_Inverted_Combined_BIT2HE_crypts_lieberkuhn_Style_injection_Train/20260211_duodenum_only_crypts_3DFlow_zspacing=2slices_lamsub=0p0_lamemb=0p0_lamSty=1p0/model_m(uvcgan2_3D_stylefusion)_d(basic)_g(vit-modnet)_uvcgan2-bn_(False:10.0:0.01:5e-05)/checkpoints"
+DEFAULT_CHECKPOINTS_DIR="/home/durrlab/Desktop/Anthony/UGVSM/3D_flow_consistent_UVCGANv2_vHE/scripts/20260210_Inverted_MUSE_BIT2HE_crypts_lieberkuhn_train/outdir/20260211_Inverted_Combined_BIT2HE_crypts_lieberkuhn_Multiscale_Content_Train/20260211_duo_lieberkuhn_MUSEBIT_zspacing=2slices_lamsub=0p0_lamemb=0p0_lamMS=1p0_msC=16_lamSty=1p0/model_m(uvcgan2_3D_emb_sub_style_content)_d(basic)_g(vit-modnet)_uvcgan2-bn_(False:10.0:0.01:5e-05)/checkpoints"
 
 CHECKPOINTS_DIR="${DEFAULT_CHECKPOINTS_DIR}"
-TEST_A="/home/durrlab-asong/Anthony/duodenum_crypts_lieberkuhn_MUSE_BIT/BIT/trainA"
-REAL_B="/home/durrlab-asong/Anthony/duodenum_crypts_lieberkuhn_MUSE_BIT/FFPE_HE/trainB"
-OUTPUT_DIR="/home/durrlab-asong/Anthony/3D_flow_consistent_UVCGANv2_vHE/outdir/20260210_Inverted_Combined_BIT2HE_duodenum_crypts_lieberkuhn_Style_injection/outdir/20260211_Inverted_Combined_BIT2HE_crypts_lieberkuhn_Style_injection_Train/20260211_duodenum_only_crypts_3DFlow_zspacing=2slices_lamsub=0p0_lamemb=0p0_lamSty=1p0/"
+TEST_A="/home/durrlab/Desktop/Anthony/data/duodenum_crypts_lieberkuhn_MUSE_BIT/BIT/trainA"
+REAL_B="/home/durrlab/Desktop/Anthony/data/duodenum_crypts_lieberkuhn_MUSE_BIT/FFPE_HE/trainB"
+OUTPUT_DIR="/home/durrlab/Desktop/Anthony/UGVSM/3D_flow_consistent_UVCGANv2_vHE/scripts/20260210_Inverted_MUSE_BIT2HE_crypts_lieberkuhn_train/outdir/20260211_Inverted_Combined_BIT2HE_crypts_lieberkuhn_Multiscale_Content_Train/20260211_duo_lieberkuhn_MUSEBIT_zspacing=2slices_lamsub=0p0_lamemb=0p0_lamMS=1p0_msC=16_lamSty=1p0/"
 SPLIT="test"
 BATCH_SIZE="1"
 NUM_WORKERS="0"
 N_EVAL=""
-EPOCHS="10:30:10"
+EPOCHS="85:125:10"
 DATASET_NAME="cyclegan"
 Z_SPACING="2"
 SAMPLE_BASENAME=""
@@ -42,6 +42,9 @@ NO_KEEP_BEST="0"
 STYLE_FUSION_STATE="auto"      # auto|epoch|final|none
 STYLE_FUSION_INJECT="adain"         # add|adain
 LAMBDA_STYLE_FUSION=""         # float
+
+# Optional GPU override (forces single-GPU execution by masking others).
+CUDA_VISIBLE_DEVICES_OVERRIDE="0"
 
 usage() {
   cat <<'EOF'
@@ -78,6 +81,10 @@ Style-fusion overrides (only used for uvcgan2_3D_stylefusion):
 
 Environment:
   CUDA_VISIBLE_DEVICES=0  Choose GPU (passed through to python)
+
+GPU control:
+  --single-gpu [ID]       Force single-GPU by setting CUDA_VISIBLE_DEVICES to ID (default: 0)
+  --cuda-visible-devices LIST  Set CUDA_VISIBLE_DEVICES explicitly (e.g. "0" or "1,2")
 EOF
 }
 
@@ -135,6 +142,15 @@ while [[ $# -gt 0 ]]; do
     --lambda-style-fusion)
       [[ $# -ge 2 ]] || { echo "Error: --lambda-style-fusion requires a FLOAT." >&2; usage; exit 2; }
       LAMBDA_STYLE_FUSION="$2"; shift 2 ;;
+    --single-gpu)
+      if [[ $# -ge 2 && "$2" != --* ]]; then
+        CUDA_VISIBLE_DEVICES_OVERRIDE="$2"; shift 2
+      else
+        CUDA_VISIBLE_DEVICES_OVERRIDE="0"; shift 1
+      fi ;;
+    --cuda-visible-devices)
+      [[ $# -ge 2 ]] || { echo "Error: --cuda-visible-devices requires a LIST." >&2; usage; exit 2; }
+      CUDA_VISIBLE_DEVICES_OVERRIDE="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *)
       echo "Unknown argument: $1" >&2
@@ -208,5 +224,9 @@ echo "[INFO] Running:"
 printf ' %q' "${cmd[@]}"
 echo
 
-"${cmd[@]}"
-
+if [[ -n "${CUDA_VISIBLE_DEVICES_OVERRIDE}" ]]; then
+  echo "[INFO] CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES_OVERRIDE}"
+  CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES_OVERRIDE}" "${cmd[@]}"
+else
+  "${cmd[@]}"
+fi

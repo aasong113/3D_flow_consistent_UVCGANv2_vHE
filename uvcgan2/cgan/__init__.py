@@ -6,6 +6,7 @@ from .uvcgan2            import UVCGAN2
 from .uvcgan2_3D_subtraction_loss         import UVCGAN2_3D_subtraction_loss  
 from .uvcgan2_3D_embedding_loss         import UVCGAN2_3D_embedding_loss
 from .uvcgan2_3D_emb_sub_stylefusion import UVCGAN2_3D_stylefusion
+from .uvcgan2_3D_emb_sub_style_content import UVCGAN2_3D_emb_sub_style_content
 
 
 CGAN_MODELS = {
@@ -17,6 +18,7 @@ CGAN_MODELS = {
     'uvcgan2_3D_subtraction_loss'         : UVCGAN2_3D_subtraction_loss,
     'uvcgan2_3D_embedding_loss'         : UVCGAN2_3D_embedding_loss,
     'uvcgan2_3D_stylefusion'         : UVCGAN2_3D_stylefusion,
+    'uvcgan2_3D_emb_sub_style_content'         : UVCGAN2_3D_emb_sub_style_content,
 
 }
 
@@ -33,4 +35,3 @@ def construct_model(savedir, config, is_train, device):
     )
 
     return model
-

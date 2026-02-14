@@ -213,15 +213,8 @@ def get_transfer_preset(cmdargs):
         base_model = cmdargs.base_model
     else:
         pretrain_root = (
-            '/home/durrlab/Desktop/Anthony/UGVSM/UVCGANv2_vHE/outdir/'
-            '20251225_Inverted_combined_BIT2HE_duodenum_crypts/'
-            '20251225_Inverted_combined_BIT2HE_duodenum_crypts_pretrain'
-        )
-        model_dir = (
-            'model_m(autoencoder)_d(None)'
-            f"_g({GEN_PRESETS[cmdargs.gen]['model']})_pretrain-{cmdargs.gen}"
-        )
-        base_model = os.path.join(pretrain_root, model_dir)
+         '/home/durrlab/Desktop/Anthony/UGVSM/3D_flow_consistent_UVCGANv2_vHE/scripts/20260210_Inverted_MUSE_BIT2HE_crypts_lieberkuhn_train/20260207_Inverted_MUSE_BIT2HE_crypts_lieberkuhn_pretrain/model_m(autoencoder)_d(None)_g(vit-modnet)_pretrain-uvcgan2')
+        base_model = os.path.join(pretrain_root)
 
     return {
         'base_model' : base_model,
@@ -249,12 +242,15 @@ lambda_sub_str = str(cmdargs.lambda_sub_loss).replace('.', 'p')
 lambda_emb_str = str(cmdargs.lambda_embedding_loss).replace('.', 'p')
 lambda_ms_str = str(cmdargs.lambda_multiscale_content).replace('.', 'p')
 ms_chan_str = str(cmdargs.multiscale_num_channels)
+ms_scales_str = str(cmdargs.multiscale_scales) if cmdargs.multiscale_scales else "default"
+ms_scales_slug = ms_scales_str.replace(",", "-")
 lambda_sty_str = str(cmdargs.lambda_style_fusion).replace('.', 'p')
 wandb_project = cmdargs.wandb_project or (
     f'{today_str}_duodenum_only_crypts_3DFlow_'
     f'zspacing={cmdargs.z_spacing}slices_'
     f'lamsub={lambda_sub_str}_lamemb={lambda_emb_str}_'
-    f'lamMS={lambda_ms_str}_msC={ms_chan_str}_lamSty={lambda_sty_str}'
+    f'lamMS={lambda_ms_str}_msC={ms_chan_str}_msS={ms_scales_slug}_'
+    f'lamSty={lambda_sty_str}'
 )
 
 # ✅ BUILD dataset config — domain A will use the AdjacentZPairDataset manually injected below
@@ -341,6 +337,7 @@ args_dict = {
             model_save_dir,
             f'debug_images_zspacing={cmdargs.z_spacing}_lambdsub={lambda_sub_str}_'
             f'lambdemb={lambda_emb_str}_lamMS={lambda_ms_str}_msC={ms_chan_str}_'
+            f'msS={ms_scales_slug}_'
             f'lamSty={lambda_sty_str}'
         ),  # Optional: directory to save debug images from subtraction loss
         'head_config'     : {
@@ -371,7 +368,8 @@ args_dict = {
         model_save_dir,
         f'{today_str}_duodenum_crypts_3DFlow_style_content_zspacing={cmdargs.z_spacing}slices_'
         f'lamsub={lambda_sub_str}_lamemb={lambda_emb_str}_'
-        f'lamMS={lambda_ms_str}_msC={ms_chan_str}_lamSty={lambda_sty_str}'
+        f'lamMS={lambda_ms_str}_msC={ms_chan_str}_msS={ms_scales_slug}_'
+        f'lamSty={lambda_sty_str}'
     ),
     'log_level'  : 'DEBUG',
     'checkpoint' : 10,

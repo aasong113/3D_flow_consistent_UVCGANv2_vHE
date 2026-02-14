@@ -223,7 +223,7 @@ def get_transfer_preset(cmdargs):
             'gen_ba' : 'encoder',
         },
         'strict'        : True,
-        'allow_partial' : False,
+        'allow_partial' : True,
         'fuzzy'         : None,
     }
 

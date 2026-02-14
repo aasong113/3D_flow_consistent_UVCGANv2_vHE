@@ -4,8 +4,17 @@ import sys
 import os
 from datetime import date
 
-# Go up 3 levels to get repo root from inside scripts/2025*/train_3D.py
-new_repo_root = os.path.abspath(os.path.join(__file__, '..', '..', '..'))
+# Resolve repo root by walking up until we find the uvcgan2 package.
+_here = os.path.dirname(os.path.abspath(__file__))
+_candidate_root = None
+for _ in range(6):
+    if os.path.isdir(os.path.join(_here, "uvcgan2")):
+        _candidate_root = _here
+        break
+    _here = os.path.dirname(_here)
+if _candidate_root is None:
+    raise RuntimeError("Could not locate repo root containing 'uvcgan2' package.")
+new_repo_root = _candidate_root
 # Remove old UVCGAN paths and add the correct one
 sys.path = [p for p in sys.path if 'UVCGANv2_vHE' not in p or new_repo_root in os.path.abspath(p)]
 sys.path.insert(0, new_repo_root)

@@ -206,6 +206,14 @@ def build_patch_index(folder):
     Build an index: (base_lower, img_num, P) -> filepath
     Also returns base_lower -> set(img_num) for fast lookup.
     """
+    def base_variants(base_lower):
+        # Allow matching when patch filenames carry a prefix not present in metadata.
+        variants = {base_lower}
+        for prefix in ("muse_bit_", "musebit_", "muse_"):
+            if base_lower.startswith(prefix):
+                variants.add(base_lower[len(prefix):])
+        return variants
+
     index = {}
     base_to_imgs = {}
     if not os.path.isdir(folder):
@@ -221,10 +229,12 @@ def build_patch_index(folder):
         base = normalize_base_from_filename(fname)
         if not base:
             continue
+        base = base.lower()
         img_num = int(m.group(1))
         p_num = int(n.group(1))
-        index[(base, img_num, p_num)] = path
-        base_to_imgs.setdefault(base, set()).add(img_num)
+        for key in base_variants(base):
+            index[(key, img_num, p_num)] = path
+            base_to_imgs.setdefault(key, set()).add(img_num)
     return index, base_to_imgs
 
 

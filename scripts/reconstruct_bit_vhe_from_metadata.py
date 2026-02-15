@@ -17,6 +17,9 @@ def reconstruct_image_from_patches_JUST_BIT(
     return_as_array=False,
     patch_index=None,
     base_key=None,
+    blend_mode="avg",
+    feather_edge_frac=0.2,
+    feather_min_weight=0.1,
 ):
     """
     Reconstruct the original image using metadata coordinates (x, y, width, height),
@@ -114,6 +117,28 @@ def reconstruct_image_from_patches_JUST_BIT(
     canvas = np.zeros((h, w, 3), dtype=np.float32) if mode == 'color' else np.zeros((h, w), dtype=np.float32)
     weight_map = np.zeros((h, w), dtype=np.float32)
 
+    def build_feather_mask(ph, pw):
+        # Feather weights to reduce seams: ramp to a non-zero min weight at edges.
+        edge_len = int(round(min(ph, pw) * feather_edge_frac))
+        if edge_len < 1:
+            return np.ones((ph, pw), dtype=np.float32)
+
+        def ramp_weights(length):
+            w = np.ones(length, dtype=np.float32)
+            ramp_len = min(edge_len, length // 2)
+            if ramp_len < 1:
+                return w
+            ramp = np.linspace(feather_min_weight, 1.0, ramp_len, dtype=np.float32)
+            w[:ramp_len] = ramp
+            w[-ramp_len:] = ramp[::-1]
+            return w
+
+        wy = ramp_weights(ph)
+        wx = ramp_weights(pw)
+        return np.outer(wy, wx).astype(np.float32)
+
+    mask_cache = {}
+
     def prepare_patch(raw):
         # Convert raw array to chosen mode
         if raw.ndim == 2:
@@ -150,11 +175,23 @@ def reconstruct_image_from_patches_JUST_BIT(
         if H != ph or Wp != pw:
             patch = (patch[:ph, :pw, :] if mode == 'color' else patch[:ph, :pw])
 
-        if mode == 'color':
-            canvas[y:y+ph, x:x+pw, :] += patch
+        if blend_mode == "feather":
+            key = (ph, pw)
+            mask = mask_cache.get(key)
+            if mask is None:
+                mask = build_feather_mask(ph, pw)
+                mask_cache[key] = mask
+            if mode == 'color':
+                canvas[y:y+ph, x:x+pw, :] += patch * mask[..., None]
+            else:
+                canvas[y:y+ph, x:x+pw] += patch * mask
+            weight_map[y:y+ph, x:x+pw] += mask
         else:
-            canvas[y:y+ph, x:x+pw] += patch
-        weight_map[y:y+ph, x:x+pw] += 1
+            if mode == 'color':
+                canvas[y:y+ph, x:x+pw, :] += patch
+            else:
+                canvas[y:y+ph, x:x+pw] += patch
+            weight_map[y:y+ph, x:x+pw] += 1
         used += 1
 
     if missing:
@@ -238,7 +275,19 @@ def build_patch_index(folder):
     return index, base_to_imgs
 
 
-def reconstruct_all_stacks(bit_folder, vhe_folder, metadata_glob, bit_out_name, vhe_out_name, bit_ext, vhe_ext):
+def reconstruct_all_stacks(
+    bit_folder,
+    vhe_folder,
+    metadata_glob,
+    bit_out_name,
+    vhe_out_name,
+    bit_ext,
+    vhe_ext,
+    bit_blend_mode,
+    vhe_blend_mode,
+    feather_edge_frac,
+    feather_min_weight,
+):
     bit_out_dir = os.path.join(bit_folder, bit_out_name)
     vhe_out_dir = os.path.join(vhe_folder, vhe_out_name)
     os.makedirs(bit_out_dir, exist_ok=True)
@@ -270,6 +319,9 @@ def reconstruct_all_stacks(bit_folder, vhe_folder, metadata_glob, bit_out_name, 
                 return_as_array=False,
                 patch_index=bit_index,
                 base_key=base_key,
+                blend_mode=bit_blend_mode,
+                feather_edge_frac=feather_edge_frac,
+                feather_min_weight=feather_min_weight,
             )
             out_name = f"{base}_img={img_num}.{bit_ext}"
             recon.save(os.path.join(bit_out_dir, out_name))
@@ -283,6 +335,9 @@ def reconstruct_all_stacks(bit_folder, vhe_folder, metadata_glob, bit_out_name, 
                 return_as_array=False,
                 patch_index=vhe_index,
                 base_key=base_key,
+                blend_mode=vhe_blend_mode,
+                feather_edge_frac=feather_edge_frac,
+                feather_min_weight=feather_min_weight,
             )
             out_name = f"{base}_img={img_num}.{vhe_ext}"
             recon.save(os.path.join(vhe_out_dir, out_name))
@@ -312,6 +367,30 @@ def parse_args(argv):
     parser.add_argument("--vhe-out-name", default="vHE_reconstructed", help="Output folder name inside vHE folder")
     parser.add_argument("--bit-ext", default="tif", help="Output extension for BIT reconstructed images")
     parser.add_argument("--vhe-ext", default="png", help="Output extension for vHE reconstructed images")
+    parser.add_argument(
+        "--bit-blend-mode",
+        default="avg",
+        choices=["avg", "feather"],
+        help="BIT blending: avg (uniform) or feather (edge-weighted)",
+    )
+    parser.add_argument(
+        "--vhe-blend-mode",
+        default="avg",
+        choices=["avg", "feather"],
+        help="vHE blending: avg (uniform) or feather (edge-weighted)",
+    )
+    parser.add_argument(
+        "--feather-edge-frac",
+        type=float,
+        default=0.2,
+        help="Fraction of patch size used for feathering ramps (only for feather)",
+    )
+    parser.add_argument(
+        "--feather-min-weight",
+        type=float,
+        default=0.1,
+        help="Minimum edge weight for feathering (only for feather)",
+    )
     return parser.parse_args(argv)
 
 
@@ -325,6 +404,10 @@ def main(argv):
         vhe_out_name=args.vhe_out_name,
         bit_ext=args.bit_ext,
         vhe_ext=args.vhe_ext,
+        bit_blend_mode=args.bit_blend_mode,
+        vhe_blend_mode=args.vhe_blend_mode,
+        feather_edge_frac=args.feather_edge_frac,
+        feather_min_weight=args.feather_min_weight,
     )
     print(f"Reconstructed {len(summary)} stacks.")
 

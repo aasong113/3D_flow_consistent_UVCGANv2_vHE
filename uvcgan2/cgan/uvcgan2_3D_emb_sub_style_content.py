@@ -415,6 +415,7 @@ class UVCGAN2_3D_emb_sub_style_content(ModelBase):
         lambda_embedding_loss = 0.5, # This is the weight for the embedding loss between adjacent slices.
         lambda_multiscale_content = 0.0, # Weight for multiscale content loss (sampled channels).
         multiscale_num_channels = 8, # Number of channels sampled per scale.
+        multiscale_use_all_channels = False, # Use all channels instead of sampling.
         multiscale_scales = None, # Comma list/iterable of scales; defaults to all.
         lambda_style_loss = 1.0, # Style loss weight comparing gen_ba(real_b) vs gen_ba(fake_b) style-token stats.
         lambda_style_fusion = 1.0, # Scale factor for style token injection; decays with epochs (cosine schedule).
@@ -435,6 +436,7 @@ class UVCGAN2_3D_emb_sub_style_content(ModelBase):
         self.lambda_embedding_loss = lambda_embedding_loss # embedding Losss
         self.lambda_multiscale_content = lambda_multiscale_content  # 0 disables this loss entirely.
         self.multiscale_num_channels = int(multiscale_num_channels)  # How many channels to sample per scale.
+        self.multiscale_use_all_channels = bool(multiscale_use_all_channels)
         self.lambda_style_loss = lambda_style_loss
         self.lambda_style_fusion_base = lambda_style_fusion
         self.style_fusion_inject = style_fusion_inject
@@ -473,6 +475,7 @@ class UVCGAN2_3D_emb_sub_style_content(ModelBase):
             f"lambda_embedding_loss={lambda_embedding_loss}, "
             f"lambda_multiscale_content={lambda_multiscale_content}, "
             f"multiscale_num_channels={self.multiscale_num_channels}, "
+            f"multiscale_use_all_channels={self.multiscale_use_all_channels}, "
             f"lambda_style_loss={lambda_style_loss}, "
             f"lambda_style_fusion={lambda_style_fusion}, style_fusion_inject={style_fusion_inject}, "
             f"avg_momentum={avg_momentum}, z_spacing={z_spacing}"
@@ -787,8 +790,12 @@ class UVCGAN2_3D_emb_sub_style_content(ModelBase):
         Compare sampled channels across multiple encoder scales + ViT spatial output.
 
         Uses asymmetric detach to stabilize training (targets are detached).
+
+        - Multiscale content loss: mean L1 between channel features at matching scales,
+          using either sampled channels or all channels when enabled; BA is compared to
+          AB with AB features detached as targets.
         """
-        if self.multiscale_num_channels <= 0:
+        if self.multiscale_num_channels <= 0 and not self.multiscale_use_all_channels:
             return None
 
         self._ensure_multiscale_content_hooks(gen_ab, gen_ba)
@@ -838,14 +845,17 @@ class UVCGAN2_3D_emb_sub_style_content(ModelBase):
                 continue
 
             channels = feat_ab.shape[1]
-            k = min(self.multiscale_num_channels, channels)
-            if k <= 0:
-                continue
-
-            # Sample the same channel indices for AB and BA at this scale.
-            idx = torch.randperm(channels, device=feat_ab.device)[:k]
-            feat_ab_sel = feat_ab.index_select(1, idx)
-            feat_ba_sel = feat_ba.index_select(1, idx)
+            if self.multiscale_use_all_channels:
+                feat_ab_sel = feat_ab
+                feat_ba_sel = feat_ba
+            else:
+                k = min(self.multiscale_num_channels, channels)
+                if k <= 0:
+                    continue
+                # Sample the same channel indices for AB and BA at this scale.
+                idx = torch.randperm(channels, device=feat_ab.device)[:k]
+                feat_ab_sel = feat_ab.index_select(1, idx)
+                feat_ba_sel = feat_ba.index_select(1, idx)
 
             # Asymmetric detach: use AB features as fixed targets.
             loss += self.criterion_multiscale_content(

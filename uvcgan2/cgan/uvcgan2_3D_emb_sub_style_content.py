@@ -785,88 +785,110 @@ class UVCGAN2_3D_emb_sub_style_content(ModelBase):
             fmap = fmap / (denom + 1e-6)
         save_image(fmap, save_path)
 
-    def multiscale_content_loss(self, real_a, gen_ab, gen_ba, step=None):
+    def multiscale_content_loss(self, real_a, real_b, gen_ab, gen_ba, step=None):
         """
         Compare sampled channels across multiple encoder scales + ViT spatial output.
 
         Uses asymmetric detach to stabilize training (targets are detached).
 
         - Multiscale content loss: mean L1 between channel features at matching scales,
-          using either sampled channels or all channels when enabled; BA is compared to
-          AB with AB features detached as targets.
+          using either sampled channels or all channels when enabled; AB/BA features are
+          compared with the source features detached as targets. If real_b is provided,
+          computes both A->B->A and B->A->B and averages them.
         """
         if self.multiscale_num_channels <= 0 and not self.multiscale_use_all_channels:
             return None
 
         self._ensure_multiscale_content_hooks(gen_ab, gen_ba)
 
-        # Forward A->B to capture gen_ab features.
-        self._clear_multiscale_content_storage()
-        fake_b = gen_ab(real_a)
-        feats_ab = dict(self._ms_content_storage["ab"])
-
-        # Forward B->A on fake_b to capture gen_ba features.
-        self._ms_content_storage["ba"].clear()
-        _ = gen_ba(fake_b)
-        feats_ba = dict(self._ms_content_storage["ba"])
-
-        # Save one feature map per scale for AB and BA every 1000 steps.
-        if (
-            step is not None
-            and self.debug_root is not None
-            and (step % 1000 == 0)
-        ):
+        def _save_debug(feats_src, feats_tgt, label):
+            if (
+                step is None
+                or self.debug_root is None
+                or (step % 1000 != 0)
+            ):
+                return
             debug_dir = os.path.join(self.debug_root, "multiscale_feature_maps")
             os.makedirs(debug_dir, exist_ok=True)
             step_tag = f"step{int(step):06d}"
             for scale in self.multiscale_scales:
-                feat_ab = feats_ab.get(scale)
-                feat_ba = feats_ba.get(scale)
-                if feat_ab is not None:
+                feat_src = feats_src.get(scale)
+                feat_tgt = feats_tgt.get(scale)
+                if feat_src is not None:
                     save_path = os.path.join(
-                        debug_dir, f"{step_tag}_ab_{scale}.png"
+                        debug_dir, f"{step_tag}_{label}_src_{scale}.png"
                     )
-                    self._save_single_feature_map(feat_ab, save_path)
-                if feat_ba is not None:
+                    self._save_single_feature_map(feat_src, save_path)
+                if feat_tgt is not None:
                     save_path = os.path.join(
-                        debug_dir, f"{step_tag}_ba_{scale}.png"
+                        debug_dir, f"{step_tag}_{label}_tgt_{scale}.png"
                     )
-                    self._save_single_feature_map(feat_ba, save_path)
+                    self._save_single_feature_map(feat_tgt, save_path)
 
-        loss = 0.0
-        used = 0
-
-        for scale in self.multiscale_scales:
-            feat_ab = feats_ab.get(scale)
-            feat_ba = feats_ba.get(scale)
-            if feat_ab is None or feat_ba is None:
-                continue
-            if feat_ab.shape != feat_ba.shape:
-                continue
-
-            channels = feat_ab.shape[1]
-            if self.multiscale_use_all_channels:
-                feat_ab_sel = feat_ab
-                feat_ba_sel = feat_ba
-            else:
-                k = min(self.multiscale_num_channels, channels)
-                if k <= 0:
+        def _pair_loss(feats_src, feats_tgt):
+            loss = 0.0
+            used = 0
+            for scale in self.multiscale_scales:
+                feat_src = feats_src.get(scale)
+                feat_tgt = feats_tgt.get(scale)
+                if feat_src is None or feat_tgt is None:
                     continue
-                # Sample the same channel indices for AB and BA at this scale.
-                idx = torch.randperm(channels, device=feat_ab.device)[:k]
-                feat_ab_sel = feat_ab.index_select(1, idx)
-                feat_ba_sel = feat_ba.index_select(1, idx)
+                if feat_src.shape != feat_tgt.shape:
+                    continue
 
-            # Asymmetric detach: use AB features as fixed targets.
-            loss += self.criterion_multiscale_content(
-                feat_ba_sel, feat_ab_sel.detach()
-            )
-            used += 1
+                channels = feat_src.shape[1]
+                if self.multiscale_use_all_channels:
+                    feat_src_sel = feat_src
+                    feat_tgt_sel = feat_tgt
+                else:
+                    k = min(self.multiscale_num_channels, channels)
+                    if k <= 0:
+                        continue
+                    # Sample the same channel indices for both feature maps.
+                    idx = torch.randperm(channels, device=feat_src.device)[:k]
+                    feat_src_sel = feat_src.index_select(1, idx)
+                    feat_tgt_sel = feat_tgt.index_select(1, idx)
 
-        if used == 0:
+                # Asymmetric detach: use source features as fixed targets.
+                loss += self.criterion_multiscale_content(
+                    feat_tgt_sel, feat_src_sel.detach()
+                )
+                used += 1
+            if used == 0:
+                return None
+            return loss / used
+
+        losses = []
+
+        # A->B->A: compare gen_ab(real_a) features to gen_ba(fake_b) features.
+        self._clear_multiscale_content_storage()
+        fake_b = gen_ab(real_a)
+        feats_ab = dict(self._ms_content_storage["ab"])
+        self._ms_content_storage["ba"].clear()
+        _ = gen_ba(fake_b)
+        feats_ba = dict(self._ms_content_storage["ba"])
+        _save_debug(feats_ab, feats_ba, "a2b2a")
+        loss_ab = _pair_loss(feats_ab, feats_ba)
+        if loss_ab is not None:
+            losses.append(loss_ab)
+
+        # B->A->B: compare gen_ba(real_b) features to gen_ab(fake_a) features.
+        if real_b is not None:
+            self._clear_multiscale_content_storage()
+            fake_a = gen_ba(real_b)
+            feats_ba = dict(self._ms_content_storage["ba"])
+            self._ms_content_storage["ab"].clear()
+            _ = gen_ab(fake_a)
+            feats_ab = dict(self._ms_content_storage["ab"])
+            _save_debug(feats_ba, feats_ab, "b2a2b")
+            loss_ba = _pair_loss(feats_ba, feats_ab)
+            if loss_ba is not None:
+                losses.append(loss_ba)
+
+        if not losses:
             return None
 
-        return loss / used
+        return sum(losses) / len(losses)
 
 
     # Visualize the ViT Bottle Neck Embeddings for debugging. 
@@ -1313,6 +1335,7 @@ class UVCGAN2_3D_emb_sub_style_content(ModelBase):
             if getattr(self, "lambda_multiscale_content", 0) > 0:
                 ms_loss = self.multiscale_content_loss(
                     self.images.real_a,
+                    self.images.real_b,
                     self.models.gen_ab,
                     self.models.gen_ba,
                     step=self.current_step

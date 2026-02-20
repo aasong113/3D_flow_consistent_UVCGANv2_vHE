@@ -6,7 +6,7 @@
                 "dataset": {
                     "domain": "A",
                     "name": "cyclegan",
-                    "path": "/home/durrlab/Desktop/Anthony/data/kidney_normal_all/kidney_normal_BIT_invBIT_BIT"
+                    "path": "/home/durrlab/Desktop/Anthony/data/kidney_normal_all/kidney_normal_BIT-invBIT_BIT"
                 },
                 "shape": [
                     3,

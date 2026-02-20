@@ -23,7 +23,12 @@ class NamedDict(Mapping):
         self._fields[key] = value
 
     def __getattr__(self, key):
-        return self._fields[key]
+        try:
+            return self._fields[key]
+        except KeyError as e:
+            # Python attribute protocol expects missing attrs to raise AttributeError.
+            # This keeps hasattr(...) and generic attr access behavior correct.
+            raise AttributeError(key) from e
 
     def __setattr__(self, key, value):
         if (self._fields is not None) and (key in self._fields):
@@ -45,4 +50,3 @@ class NamedDict(Mapping):
 
     def values(self):
         return self._fields.values()
-

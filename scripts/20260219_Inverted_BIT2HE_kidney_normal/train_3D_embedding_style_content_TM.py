@@ -218,7 +218,7 @@ def get_transfer_preset(cmdargs):
         base_model = cmdargs.base_model
     else:
         pretrain_root = (
-         '/home/durrlab-asong/Anthony/3D_flow_consistent_UVCGANv2_vHE/scripts/20260219_Inverted_BIT2HE_kidney_normal/20251218_Inverted_Combined_BIT2HE_normal_kidney_all_Pretrain/model_m(autoencoder)_d(None)_g(vit-modnet)_pretrain-uvcgan2')
+         '/home/durrlab-asong/Anthony/3D_flow_consistent_UVCGANv2_vHE/scripts/20260219_Inverted_BIT2HE_kidney_normal/20251130_Inverted_Combined_BIT2HE_normal_kidney_all_Pretrain/model_m(autoencoder)_d(None)_g(vit-modnet)_pretrain-uvcgan2')
         base_model = os.path.join(pretrain_root)
 
     return {
@@ -236,7 +236,7 @@ cmdargs   = parse_cmdargs()
 if not cmdargs.use_style_fusion:
     cmdargs.lambda_style_fusion = 0.0
 # /home/durrlab-asong/Anthony/subset_training_data_crypts
-data_path_domainA = os.path.join(cmdargs.root_data_path, 'BIT', 'trainA')
+data_path_domainA = os.path.join(cmdargs.root_data_path, 'BIT')
 data_path_domainB = os.path.join(cmdargs.root_data_path, 'FFPE_HE')
 
 model_save_dir = os.path.join(

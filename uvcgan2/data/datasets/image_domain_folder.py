@@ -71,9 +71,30 @@ class ImageDomainFolder(Dataset):
         self._inference = enabled
 
     def __getitem__(self, index):
-        path   = self._imgs[index]
-        result = default_loader(path)
-        #print(path)
+        total = len(self._imgs)
+        if total == 0:
+            raise RuntimeError(f"No images found in '{self._path}'")
+
+        last_error = None
+        result = None
+        path = None
+
+        for attempt in range(total):
+            curr_index = (index + attempt) % total
+            path = self._imgs[curr_index]
+
+            try:
+                result = default_loader(path)
+                break
+            except (OSError, IOError, ValueError) as e:
+                last_error = e
+                print(f"[WARN] Skipping unreadable image: {path} ({e})")
+
+        if result is None:
+            raise RuntimeError(
+                f"Failed to read any image from '{self._path}'. "
+                f"Last error: {last_error}"
+            )
 
         if self._transform is not None:
             result = self._transform(result)
@@ -83,4 +104,3 @@ class ImageDomainFolder(Dataset):
             return (result, os.path.basename(path))
         else:
             return result
-

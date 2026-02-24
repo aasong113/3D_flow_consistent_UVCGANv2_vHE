@@ -48,6 +48,27 @@ def training_epoch(it_train, model, title, steps_per_epoch):
 def try_continue_training(args, model):
     history = TrainingHistory(args.savedir)
 
+    if args.resume_source is not None:
+        load_epoch = args.resume_epoch
+        if load_epoch is None:
+            old_savedir = model.savedir
+            model.savedir = args.resume_source
+            load_epoch = model.find_last_checkpoint_epoch()
+            model.savedir = old_savedir
+
+        if load_epoch is None or load_epoch <= 0:
+            raise RuntimeError(
+                f"Invalid --resume-epoch={load_epoch}. "
+                "Expected a positive checkpoint epoch."
+            )
+
+        old_savedir = model.savedir
+        model.savedir = args.resume_source
+        model.load(load_epoch)
+        model.savedir = old_savedir
+
+        return (load_epoch, history)
+
     start_epoch = model.find_last_checkpoint_epoch()
     model.load(start_epoch)
 
@@ -76,6 +97,21 @@ def train(args_dict):
         args.savedir, args.config, is_train = True, device = device
     )
     start_epoch, history = try_continue_training(args, model)
+
+    # If resuming from another run, preserve the new configured learning rates.
+    if args.resume_source is not None:
+        try:
+            lr_gen = args.config.generator.optimizer.lr
+            for group in model.optimizers.gen.param_groups:
+                group['lr'] = lr_gen
+        except Exception:
+            pass
+        try:
+            lr_disc = args.config.discriminator.optimizer.lr
+            for group in model.optimizers.disc.param_groups:
+                group['lr'] = lr_disc
+        except Exception:
+            pass
 
     if (start_epoch == 0) and (args.transfer is not None):
         transfer(model, args.transfer)

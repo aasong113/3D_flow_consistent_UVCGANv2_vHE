@@ -30,11 +30,10 @@ from uvcgan2.utils.parsers import add_preset_name_parser, add_batch_size_parser
 from uvcgan2.data.adjacent_pair_dataset import AdjacentZPairDataset
 from torchvision.transforms.functional import to_pil_image
 
-today_str = date.today().strftime('%Y%m%d')
-
 def parse_cmdargs():
+    default_date = date.today().strftime('%Y%m%d')
     parser = argparse.ArgumentParser(
-        description = f'{today_str}_BIT2HE_normal_kidney_3DFlow_Multiscale_Content'
+        description = f'{default_date}_BIT2HE_normal_kidney_3DFlow_Multiscale_Content'
     )
 
     add_preset_name_parser(parser, 'gen',  GEN_PRESETS, 'uvcgan2')
@@ -65,6 +64,30 @@ def parse_cmdargs():
     parser.add_argument(
         '--lr-gen', dest = 'lr_gen', type = float,
         default = 5e-5, help = 'learning rate of the generator'
+    )
+    parser.add_argument(
+        '--lr-disc', dest='lr_disc', type=float,
+        default=1e-4, help='learning rate of the discriminator'
+    )
+    parser.add_argument(
+        '--epochs', type=int, default=200,
+        help='Total training epochs (absolute, not additional)'
+    )
+    parser.add_argument(
+        '--checkpoint-every', type=int, default=10,
+        help='Save checkpoint every N epochs'
+    )
+    parser.add_argument(
+        '--run-date', type=str, default=default_date,
+        help='Date tag used in output folder naming (YYYYMMDD)'
+    )
+    parser.add_argument(
+        '--resume-source', type=str, default=None,
+        help='Optional model savedir to resume from (supports loading a specific checkpoint epoch)'
+    )
+    parser.add_argument(
+        '--resume-epoch', type=int, default=None,
+        help='Checkpoint epoch to load from --resume-source (e.g., 20)'
     )
     
     parser.add_argument(
@@ -233,6 +256,7 @@ def get_transfer_preset(cmdargs):
     }
 
 cmdargs   = parse_cmdargs()
+run_date_str = cmdargs.run_date
 if not cmdargs.use_style_fusion:
     cmdargs.lambda_style_fusion = 0.0
 # /home/durrlab-asong/Anthony/subset_training_data_crypts
@@ -241,7 +265,7 @@ data_path_domainB = os.path.join(cmdargs.root_data_path, 'FFPE_HE')
 
 model_save_dir = os.path.join(
     ROOT_OUTDIR,
-    f'{today_str}_BIT2HE_normal_duodenum_crypts_3DFlow_Multiscale_Content'
+    f'{run_date_str}_BIT2HE_normal_duodenum_crypts_3DFlow_Multiscale_Content'
 )
 lambda_sub_str = str(cmdargs.lambda_sub_loss).replace('.', 'p')
 lambda_emb_str = str(cmdargs.lambda_embedding_loss).replace('.', 'p')
@@ -251,7 +275,7 @@ ms_scales_str = str(cmdargs.multiscale_scales) if cmdargs.multiscale_scales else
 ms_scales_slug = ms_scales_str.replace(",", "-")
 lambda_sty_str = str(cmdargs.lambda_style_fusion).replace('.', 'p')
 wandb_project = cmdargs.wandb_project or (
-    f'{today_str}_duodenum_only_crypts_3DFlow_'
+    f'{run_date_str}_duodenum_only_crypts_3DFlow_'
     f'zspacing={cmdargs.z_spacing}slices_'
     f'lamsub={lambda_sub_str}_lamemb={lambda_emb_str}_'
     f'lamMS={lambda_ms_str}_msC={ms_chan_str}_msS={ms_scales_slug}_'
@@ -293,13 +317,13 @@ args_dict = {
         'merge_type' : 'unpaired',
         'workers'    : 1,
     },
-    'epochs'      : 200,
+    'epochs'      : cmdargs.epochs,
     'discriminator' : {
         'model'      : 'basic',
         'model_args' : { 'shrink_output' : False },
         'optimizer'  : {
             'name'  : 'Adam',
-            'lr'    : 1e-4,
+            'lr'    : cmdargs.lr_disc,
             'betas' : (0.5, 0.99),
         },
         'weight_init' : {
@@ -369,13 +393,15 @@ args_dict = {
 
     'outdir'     : os.path.join(
         model_save_dir,
-        f'{today_str}_duodenum_crypts_3DFlow_style_content_zspacing={cmdargs.z_spacing}slices_'
+        f'{run_date_str}_duodenum_crypts_3DFlow_style_content_zspacing={cmdargs.z_spacing}slices_'
         f'lamsub={lambda_sub_str}_lamemb={lambda_emb_str}_'
         f'lamMS={lambda_ms_str}_msC={ms_chan_str}_msS={ms_scales_slug}_'
         f'lamSty={lambda_sty_str}'
     ),
     'log_level'  : 'DEBUG',
-    'checkpoint' : 10,
+    'checkpoint' : cmdargs.checkpoint_every,
+    'resume_source': cmdargs.resume_source,
+    'resume_epoch': cmdargs.resume_epoch,
 }
 print(ROOT_OUTDIR)
 

@@ -21,12 +21,16 @@ class Args:
         'savedir',
         'checkpoint',
         'log_level',
+        'resume_epoch',
+        'resume_source',
     ]
 
     def __init__(
         self, config, savedir, label,
         log_level  = 'INFO',
         checkpoint = 100,
+        resume_epoch = None,
+        resume_source = None,
     ):
         # pylint: disable=too-many-arguments
         self.config     = config
@@ -34,6 +38,8 @@ class Args:
         self.savedir    = savedir
         self.checkpoint = checkpoint
         self.log_level  = log_level
+        self.resume_epoch = resume_epoch
+        self.resume_source = resume_source
 
     def __getattr__(self, attr):
         return getattr(self.config, attr)
@@ -76,12 +82,17 @@ class Args:
         label      = None,
         log_level  = 'INFO',
         checkpoint = 100,
+        resume_epoch = None,
+        resume_source = None,
         **args_dict
     ):
         config  = Config(**args_dict)
         savedir = config.get_savedir(outdir, label)
 
-        result = Args(config, savedir, label, log_level, checkpoint)
+        result = Args(
+            config, savedir, label, log_level, checkpoint,
+            resume_epoch, resume_source
+        )
         result.check_no_collision()
 
         result.save()
@@ -101,4 +112,3 @@ class Args:
                 label = f.read()
 
         return Args(config, savedir, label)
-

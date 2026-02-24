@@ -375,7 +375,7 @@ args_dict = {
         f'lamSty={lambda_sty_str}'
     ),
     'log_level'  : 'DEBUG',
-    'checkpoint' : 10,
+    'checkpoint' : 5,
 }
 print(ROOT_OUTDIR)
 

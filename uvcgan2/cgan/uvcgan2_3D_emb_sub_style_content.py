@@ -57,6 +57,11 @@ class UVCGAN2_3D_emb_sub_style_content(ModelBase):
     # checkpoint directory as the model weights/optimizers.
     STYLE_FUSION_STATE_NAME = "style_fusion_state"
 
+    @staticmethod
+    def _unwrap_dp(model):
+        # Support DataParallel (and future wrappers that expose `.module`).
+        return model.module if hasattr(model, "module") else model
+
     def _setup_images(self, _config):
         images = [
             'real_a', 'real_b',
@@ -126,14 +131,16 @@ class UVCGAN2_3D_emb_sub_style_content(ModelBase):
         
         # Register hook to bottleneck (ExtendedPixelwiseViT) for both generators
         print("Modules inside gen_ab.net:")
-        for name, module in models['gen_ab'].net.named_modules():
+        gen_ab = self._unwrap_dp(models['gen_ab'])
+        gen_ba = self._unwrap_dp(models['gen_ba'])
+        for name, module in gen_ab.net.named_modules():
             print(name)
 
         # Get the bottleneck layers AB
-        bottleneck_layer_ab = models['gen_ab'].net.modnet.inner_module.inner_module.inner_module.inner_module.encoder.encoder[11].norm2
+        bottleneck_layer_ab = gen_ab.net.modnet.inner_module.inner_module.inner_module.inner_module.encoder.encoder[11].norm2
         bottleneck_layer_ab.register_forward_hook(make_hook("ab"))
         
-        bottleneck_layer_ba = models['gen_ba'].net.modnet.inner_module.inner_module.inner_module.inner_module.encoder.encoder[11].norm2
+        bottleneck_layer_ba = gen_ba.net.modnet.inner_module.inner_module.inner_module.inner_module.encoder.encoder[11].norm2
         bottleneck_layer_ba.register_forward_hook(make_hook("ba"))
 
         self._setup_style_fusion(models)
@@ -141,6 +148,7 @@ class UVCGAN2_3D_emb_sub_style_content(ModelBase):
         return NamedDict(**models)
 
     def _get_vit_bottleneck(self, gen):
+        gen = self._unwrap_dp(gen)
         # `gen.net` is typically a `ModNet` instance; its `.modnet` attribute is
         # the outermost `ModNetBlock` (which does not expose get_bottleneck()).
         # The `ModNet` wrapper provides get_bottleneck() to access the innermost
@@ -605,6 +613,7 @@ class UVCGAN2_3D_emb_sub_style_content(ModelBase):
         if not hasattr(self, "hook_handles"):
             self.hook_handles = {}
 
+            gen_ba = self._unwrap_dp(gen_ba)
             bottleneck_z = gen_ba.net.modnet.inner_module.inner_module.inner_module.inner_module.encoder.encoder[11].norm2
 
             self.hook_handles["z"] = bottleneck_z.register_forward_hook(make_hook("z"))
@@ -643,6 +652,8 @@ class UVCGAN2_3D_emb_sub_style_content(ModelBase):
         if not hasattr(self, "hook_handles"):
             self.hook_handles = {}
 
+            gen_fwd = self._unwrap_dp(gen_fwd)
+            gen_bkw = self._unwrap_dp(gen_bkw)
             bottleneck_z = gen_fwd.net.modnet.inner_module.inner_module.inner_module.inner_module.encoder.encoder[11].norm2
             bottleneck_fake = gen_bkw.net.modnet.inner_module.inner_module.inner_module.inner_module.encoder.encoder[11].norm2
 
@@ -724,6 +735,7 @@ class UVCGAN2_3D_emb_sub_style_content(ModelBase):
         def get_block(gen, depth):
             # Traverse nested ModNet blocks:
             # depth=0 -> outermost block, depth=1 -> inner_module, etc.
+            gen = self._unwrap_dp(gen)
             block = getattr(gen.net, "modnet", None)
             for _ in range(depth):
                 if block is None or not hasattr(block, "inner_module"):

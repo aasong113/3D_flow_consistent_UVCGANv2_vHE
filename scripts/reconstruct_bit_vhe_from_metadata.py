@@ -139,6 +139,14 @@ def reconstruct_image_from_patches_JUST_BIT(
 
     mask_cache = {}
 
+    def build_hann_mask(ph, pw):
+        # Hann-window blending for smooth overlap transitions.
+        # Clip away exact zeros at borders to avoid zero-weight holes.
+        wy = np.hanning(ph).astype(np.float32) if ph > 1 else np.ones((ph,), dtype=np.float32)
+        wx = np.hanning(pw).astype(np.float32) if pw > 1 else np.ones((pw,), dtype=np.float32)
+        mask = np.outer(wy, wx).astype(np.float32)
+        return np.clip(mask, 1e-3, 1.0)
+
     def prepare_patch(raw):
         # Convert raw array to chosen mode
         if raw.ndim == 2:
@@ -186,6 +194,17 @@ def reconstruct_image_from_patches_JUST_BIT(
             else:
                 canvas[y:y+ph, x:x+pw] += patch * mask
             weight_map[y:y+ph, x:x+pw] += mask
+        elif blend_mode == "hann":
+            key = ("hann", ph, pw)
+            mask = mask_cache.get(key)
+            if mask is None:
+                mask = build_hann_mask(ph, pw)
+                mask_cache[key] = mask
+            if mode == 'color':
+                canvas[y:y+ph, x:x+pw, :] += patch * mask[..., None]
+            else:
+                canvas[y:y+ph, x:x+pw] += patch * mask
+            weight_map[y:y+ph, x:x+pw] += mask
         else:
             if mode == 'color':
                 canvas[y:y+ph, x:x+pw, :] += patch
@@ -200,6 +219,7 @@ def reconstruct_image_from_patches_JUST_BIT(
         raise ValueError(f"No patches were used for reconstruction for img={img_num}.")
 
     # Normalize and finalize
+    weight_map = np.maximum(weight_map, 1e-8)
     if mode == 'color':
         reconstructed = canvas / weight_map[..., None]
         reconstructed = np.clip(reconstructed, 0, 255).astype(np.uint8)
@@ -370,14 +390,14 @@ def parse_args(argv):
     parser.add_argument(
         "--bit-blend-mode",
         default="avg",
-        choices=["avg", "feather"],
-        help="BIT blending: avg (uniform) or feather (edge-weighted)",
+        choices=["avg", "feather", "hann"],
+        help="BIT blending: avg (uniform), feather (linear edge-weighted), or hann (Hann-window weighted)",
     )
     parser.add_argument(
         "--vhe-blend-mode",
         default="avg",
-        choices=["avg", "feather"],
-        help="vHE blending: avg (uniform) or feather (edge-weighted)",
+        choices=["avg", "feather", "hann"],
+        help="vHE blending: avg (uniform), feather (linear edge-weighted), or hann (Hann-window weighted)",
     )
     parser.add_argument(
         "--feather-edge-frac",

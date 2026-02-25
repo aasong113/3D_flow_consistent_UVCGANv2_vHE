@@ -422,6 +422,9 @@ def main() -> None:
     best_value_for: Dict[str, Optional[float]] = {"fid": None, "kid": None, "is": None}
     best_metrics_by_epoch: Dict[int, set] = {}
 
+    def _fmt_metric(x: float) -> str:
+        return f"{float(x):.6f}" if base._is_finite_number(x) else "nan"
+
     for idx, epoch in enumerate(epochs, start=1):
         print(f"\n[INFO] Evaluating epoch {epoch} ({idx}/{len(epochs)})")
 
@@ -491,6 +494,12 @@ def main() -> None:
             fake_b_dir=fake_b_dir,
             real_b_dir=real_b_dir,
             allow_missing_metrics=cmd.allow_missing_metrics,
+        )
+        print(
+            f"[METRICS][epoch {epoch:04d}] "
+            f"FID={_fmt_metric(fid_val)}  "
+            f"KID={_fmt_metric(kid_val)}  "
+            f"IS={_fmt_metric(is_val)}"
         )
 
         row = base.EpochMetrics(
